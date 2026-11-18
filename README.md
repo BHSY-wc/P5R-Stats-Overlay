@@ -65,7 +65,7 @@ tools/               早期 Python 版（终端面板 + 存档批量查看）
 
 ```bash
 cd src/P5ROverlay
-dotnet build -c Release      # 输出到 ..\..\P5RPanel\（见 csproj 的 OutputPath）
+dotnet build -c Release      # 输出到 src/P5RPanel/（csproj 里写的是 ..\P5RPanel\）
 ```
 
 自检（游戏可以不开）：
