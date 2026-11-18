@@ -38,6 +38,8 @@
 
 ## 快速开始
 
+> 详细步骤（运行时下载页、SmartScreen 拦截怎么点、权限不一致怎么处理、装不上怎么排错）见 **[docs/安装教程.md](docs/安装教程.md)**。
+
 1. 装 **.NET 8 桌面运行时**（Desktop Runtime，x64）
 2. 下载 Release 里的 zip，解压
 3. 双击 `P5ROverlay.exe`
@@ -65,7 +67,7 @@ src/P5ROverlay/      C# 源码（.NET 8 / WinForms / x64）
   Core/              进程附加、签名扫描、Coop 定址、存档解密、数据表
   UI/                窗口、四页绘制、P5R 风格绘制原语
   Assets/            图标源图 + app.ico + 生成脚本
-docs/                使用说明 / 读取解析方法说明 / Coop 需求表 / 截图
+docs/                安装教程 / 使用说明 / 读取解析方法说明 / Coop 需求表 / 截图
 tools/               早期 Python 版（终端面板 + 存档批量查看）
 ```
 
