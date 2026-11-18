@@ -1,0 +1,16 @@
+# 编译产物
+bin/
+obj/
+*.user
+*.suo
+
+# 运行时生成（每个用户不同）
+p5r_overlay.ini
+p5r_overlay.log
+selftest.txt
+shots/
+_mem_addr.json
+
+# Python
+__pycache__/
+*.pyc
