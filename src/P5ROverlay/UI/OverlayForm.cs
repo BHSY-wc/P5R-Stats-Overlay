@@ -1477,7 +1477,6 @@ namespace P5ROverlay
 
         private void WorkerLoop()
         {
-            bool attachedOnce = false;
             int failCount = 0;
 
             while (!_stop)
@@ -1490,7 +1489,6 @@ namespace P5ROverlay
                     {
                         if (_reader.Attach(out string note))
                         {
-                            attachedOnce = true;
                             failCount = 0;
                             _readerDisposedReset();
                         }

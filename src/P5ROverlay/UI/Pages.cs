@@ -40,14 +40,30 @@ namespace P5ROverlay
     {
         protected Theme T = Theme.Make(Color.FromArgb(7, 7, 9), Color.FromArgb(246, 246, 249), Color.FromArgb(226, 0, 44));
 
-        // ---- 入场动画（数据变化时播一次，播完停表，不常驻吃 CPU）
+        // ---- 逐行动画（只有「这一次扫描和上一次相比变了」的行才播，播完停表，不常驻吃 CPU）
+        //      键 = 行的稳定标识（五维用索引 0~4，Coop 用 Confidant ID），
+        //      不在表里的行视为已播完（进度 1），所以页面切换、滚动都不会重播。
         private readonly Timer _anim = new Timer { Interval = 30 };
-        private float _intro = 1f;
-        private DateTime _animStart;
+        private readonly Dictionary<int, DateTime> _rowT = new Dictionary<int, DateTime>();
         private const int AnimMs = 700;
 
-        /// <summary>0→1 的入场进度，绘制时乘到位移/长度上。</summary>
-        protected float Intro => _intro;
+        /// <summary>某一行的入场进度 0→1；没有正在播的动画就是 1。</summary>
+        protected float RowIntro(int key)
+        {
+            if (!_rowT.TryGetValue(key, out DateTime t0)) return 1f;
+            float ms = (float)(DateTime.Now - t0).TotalMilliseconds;
+            return P5R.Clamp01(ms / AnimMs);
+        }
+
+        /// <summary>只给这些行播动画；已经在播的会重置进度（连着涨点也不会卡在中途）。</summary>
+        protected void PlayRows(params int[] keys)
+        {
+            if (keys == null || keys.Length == 0) return;
+            DateTime now = DateTime.Now;
+            foreach (int k in keys) _rowT[k] = now;
+            if (!_anim.Enabled) _anim.Start();
+            Invalidate();
+        }
 
         protected PageBase()
         {
@@ -56,19 +72,14 @@ namespace P5ROverlay
             BorderStyle = BorderStyle.None;
             _anim.Tick += (s, e) =>
             {
-                float ms = (float)(DateTime.Now - _animStart).TotalMilliseconds;
-                _intro = P5R.Clamp01(ms / AnimMs);
-                if (_intro >= 1f) _anim.Stop();
+                DateTime now = DateTime.Now;
+                var done = new List<int>();
+                foreach (var kv in _rowT)
+                    if ((now - kv.Value).TotalMilliseconds >= AnimMs) done.Add(kv.Key);
+                foreach (int k in done) _rowT.Remove(k);
+                if (_rowT.Count == 0) _anim.Stop();
                 Invalidate();
             };
-        }
-
-        /// <summary>播放入场动画。</summary>
-        protected void PlayIntro()
-        {
-            _intro = 0f;
-            _animStart = DateTime.Now;
-            _anim.Start();
         }
 
         public virtual void SetTheme(Theme t)
@@ -182,21 +193,20 @@ namespace P5ROverlay
     public sealed class StatPage : PageBase
     {
         private readonly short[] _stats = new short[5];
-        private readonly short[] _prev = new short[5];
         private bool _hasPrev;
 
         public void SetData(short[] s)
         {
             if (s == null) return;
-            bool changed = !_hasPrev;
+            var changed = new List<int>();
             for (int i = 0; i < 5 && i < s.Length; i++)
             {
-                if (_stats[i] != s[i]) changed = true;
-                _prev[i] = _hasPrev ? _stats[i] : (short)0;
+                // 首次拿到数据要整页进场；之后只有点数真的变了的那一项才动
+                if (!_hasPrev || _stats[i] != s[i]) changed.Add(i);
                 _stats[i] = s[i];
             }
             _hasPrev = true;
-            if (changed) PlayIntro();
+            PlayRows(changed.ToArray());   // 空数组内部直接返回，不会白启定时器
             Invalidate();
         }
 
@@ -219,11 +229,11 @@ namespace P5ROverlay
 
             for (int i = 0; i < 5; i++)
             {
-                DrawStatRow(g, i, padX, startY + i * rowH, fullW, rowH - 6, i * 0.06f);
+                DrawStatRow(g, i, padX, startY + i * rowH, fullW, rowH - 6);
             }
         }
 
-        private void DrawStatRow(Graphics g, int i, int x, int y, int w, int h, float delay)
+        private void DrawStatRow(Graphics g, int i, int x, int y, int w, int h)
         {
             int pts = _stats[i];
             int lv = GameTables.StatLevel(i, pts);
@@ -245,8 +255,8 @@ namespace P5ROverlay
                 next = $"距 Lv{lv + 1} 还差 {hi - pts}";
             }
 
-            // 动画：错峰滑入 + 数值滚动 + 进度缓动
-            float t = P5R.Clamp01((Intro - delay) / (1f - delay));
+            // 动画：只有这一项的点数变了才播；没变就是满进度，不滑不滚
+            float t = RowIntro(i);
             float ease = P5R.EaseOut(t);
             int slide = (int)Math.Round((1f - ease) * 26);
             int shownPts = (int)Math.Round(pts * ease);
@@ -352,11 +362,29 @@ namespace P5ROverlay
 
         public void SetData(List<CoopRow> rows)
         {
+            // 和上一帧逐一对比：只有 Rank / 好感点数变了的角色才播动画，新出现的角色也播。
+            // 之前是每次 SetData 都整页重播，5s 一刷就整片跳动，视觉上很吵。
+            var before = new Dictionary<int, (int Rank, int Points)>();
+            foreach (var r in _rows)
+                if (!r.IsHeader && r.Id > 0) before[r.Id] = (r.Rank, r.Points);
+
+            var changed = new List<int>();
+            if (rows != null)
+            {
+                foreach (var r in rows)
+                {
+                    if (r.IsHeader || r.Id <= 0) continue;
+                    if (!before.TryGetValue(r.Id, out var old) || old.Rank != r.Rank || old.Points != r.Points)
+                        changed.Add(r.Id);
+                }
+            }
+
             _rows.Clear();
             if (rows != null) _rows.AddRange(rows);
             _scroll = Math.Min(_scroll, MaxScroll);
             if (_scroll < 0) _scroll = 0;
-            PlayIntro();
+
+            PlayRows(changed.ToArray());
             Invalidate();
         }
 
@@ -401,7 +429,6 @@ namespace P5ROverlay
 
             int padX = 12;
             int y = HintH + 8 - _scroll;
-            int idx = 0;
 
             foreach (var r in _rows)
             {
@@ -414,9 +441,8 @@ namespace P5ROverlay
                 }
 
                 if (y + RowH > HintH && y < Height)
-                    DrawRow(g, r, padX, y, Width - padX * 2, idx);
+                    DrawRow(g, r, padX, y, Width - padX * 2);
                 y += RowH;
-                idx++;
             }
 
             // 滚动条（P5R 那种白色竖条）
@@ -447,12 +473,12 @@ namespace P5ROverlay
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
         }
 
-        private void DrawRow(Graphics g, CoopRow r, int x, int y, int w, int index)
+        private void DrawRow(Graphics g, CoopRow r, int x, int y, int w)
         {
             bool max = r.Rank >= 10;
             bool ready = !max && r.Need.HasValue && r.Need.Value > 0 && r.Points >= r.Need.Value;
 
-            float t = P5R.Clamp01((Intro - index * 0.035f) / 0.7f);
+            float t = RowIntro(r.Id);
             float ease = P5R.EaseOut(t);
             int slide = (int)Math.Round((1f - ease) * 22);
 
