@@ -42,6 +42,9 @@ except Exception:                                    # pragma: no cover
 # ────────────────────────────────────────────────────────── 基础数据 ──
 # 内存/存档顺序：[知识, 魅力, 灵巧, 勇气, 体贴]
 STAT_NAMES = ["知识", "魅力", "灵巧", "勇气", "体贴"]
+# 游戏菜单里的显示顺序（知识/勇气/灵巧/体贴/魅力），值为上面名字表的下标。
+# 只影响打印排列，读数据仍按内存下标。
+STAT_ORDER = [0, 3, 2, 4, 1]
 STAT_EN = ["Knowledge", "Charm", "Proficiency", "Guts", "Kindness"]
 
 # 每级起点（0 级起点固定为 0），Lv1~Lv5
@@ -372,7 +375,7 @@ def render(stats, coop, headline, subnote, footer_lines, deltas=None, coop_delta
     # ── 五 维 ──
     total_lv = sum(stat_level(i, stats[i]) for i in range(5))
     out.append(section("五 维", f"总等级 {total_lv}/25"))
-    for i in range(5):
+    for i in STAT_ORDER:
         pts = stats[i]
         lv = stat_level(i, pts)
         nxt, gap = stat_next(i, pts)

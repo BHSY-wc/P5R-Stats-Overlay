@@ -227,9 +227,12 @@ namespace P5ROverlay
             int padX = 12;
             int fullW = Math.Max(120, Width - padX * 2);
 
-            for (int i = 0; i < 5; i++)
+            // 按游戏菜单顺序排列（知识/勇气/灵巧/体贴/魅力），数据仍按内存下标取
+            var order = GameTables.StatDisplayOrder;
+            for (int d = 0; d < 5; d++)
             {
-                DrawStatRow(g, i, padX, startY + i * rowH, fullW, rowH - 6);
+                int i = (order != null && d < order.Length) ? order[d] : d;
+                DrawStatRow(g, i, padX, startY + d * rowH, fullW, rowH - 6);
             }
         }
 

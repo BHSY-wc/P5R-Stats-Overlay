@@ -25,6 +25,9 @@ COOP_COUNT = 26
 # 内存/存档顺序：[知识, 魅力, 灵巧, 勇气, 体贴]
 NAMES = ["知识", "魅力", "灵巧", "勇气", "体贴"]
 NAMES_EN = ["Knowledge", "Charm", "Proficiency", "Guts", "Kindness"]
+# 游戏菜单里的显示顺序（知识/勇气/灵巧/体贴/魅力），值为NAMES的下标。
+# 只影响打印排列，读数据仍按内存下标。
+ORDER = [0, 3, 2, 4, 1]
 THRESHOLDS = [
     [0, 34, 82, 126, 192],
     [0, 6, 52, 92, 132],
@@ -198,7 +201,8 @@ def main():
     print("=" * 78)
 
     print("\n【五维】")
-    for i, v in enumerate(cur["stats"]):
+    for i in ORDER:
+        v = cur["stats"][i]
         print(f"  {NAMES[i]} {NAMES_EN[i]:<12} {v:4d} 点   Lv{level_of(i, v)}   {gap_of(i, v)}")
 
     print("\n【Coop 羁绊】")
@@ -235,7 +239,8 @@ def main():
         f.write(f"P5R 存档 {cur['slot']}  " +
                 time.strftime("%Y-%m-%d %H:%M", time.localtime(cur["mtime"])) + "\n")
         f.write("=" * 78 + "\n\n【五维】\n")
-        for i, v in enumerate(cur["stats"]):
+        for i in ORDER:
+            v = cur["stats"][i]
             f.write(f"  {NAMES[i]} {NAMES_EN[i]:<12} {v:4d} 点   Lv{level_of(i, v)}   {gap_of(i, v)}\n")
         f.write("\n【Coop 羁绊】\n")
         for cid, rank, aff in coop:

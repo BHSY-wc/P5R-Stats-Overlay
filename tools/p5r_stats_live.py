@@ -17,6 +17,9 @@ PROCESS_QUERY_INFORMATION = 0x0400
 # 内存/存档顺序：[知识, 魅力, 灵巧, 勇气, 体贴]
 NAMES = ["知识", "魅力", "灵巧", "勇气", "体贴"]
 NAMES_EN = ["Knowledge", "Charm", "Proficiency", "Guts", "Kindness"]
+# 游戏菜单里的显示顺序（知识/勇气/灵巧/体贴/魅力），值为NAMES的下标。
+# 只影响打印排列，读数据仍按内存下标。
+ORDER = [0, 3, 2, 4, 1]
 THRESHOLDS = [
     [0, 34, 82, 126, 192],
     [0, 6, 52, 92, 132],
@@ -188,7 +191,7 @@ def main():
                 lines.append("=" * 62)
                 lines.append(f" P5R 五维实时监视    {time.strftime('%H:%M:%S')}   Ctrl+C 退出")
                 lines.append("=" * 62)
-                for i in range(5):
+                for i in ORDER:
                     lines.append(f" {NAMES[i]} {NAMES_EN[i]:<12} {v[i]:4d}  Lv{level_of(i, v[i])}  "
                                  f"[{bar(v[i], i)}]  {gap_of(i, v[i])}")
                 lines.append("=" * 62)

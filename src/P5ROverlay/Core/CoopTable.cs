@@ -10,6 +10,11 @@ namespace P5ROverlay
         public static readonly string[] StatNames = { "知识", "魅力", "灵巧", "勇气", "体贴" };
         public static readonly string[] StatEn = { "Knowledge", "Charm", "Proficiency", "Guts", "Kindness" };
 
+        // 游戏菜单（STATUS / 五维画面）里的显示顺序是 [知识, 勇气, 灵巧, 体贴, 魅力]，
+        // 与内存顺序不同。这个数组存的是「显示位 → StatNames 下标」，
+        // 只作用于渲染时的排列，读数据仍按 StatNames 的下标走。
+        public static readonly int[] StatDisplayOrder = { 0, 3, 2, 4, 1 };
+
         /// <summary>Lv1~Lv5 的累计点数门槛（与 StatNames 同序）。</summary>
         public static readonly int[][] StatTh =
         {

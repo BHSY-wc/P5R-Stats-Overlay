@@ -16,7 +16,10 @@ STAT_OFFSET = 0x139E0
 
 # 内存/存档顺序：[知识, 魅力, 灵巧, 勇气, 体贴]
 NAMES = ["知识", "魅力", "灵巧", "勇气", "体贴"]
-NAMES_EN = ["Knowledge", "Kindness", "Proficiency", "Guts", "Charm"]
+NAMES_EN = ["Knowledge", "Charm", "Proficiency", "Guts", "Kindness"]
+# 游戏菜单里的显示顺序（知识/勇气/灵巧/体贴/魅力），值为NAMES的下标。
+# 只影响打印排列，读数据仍按内存下标。
+ORDER = [0, 3, 2, 4, 1]
 THRESHOLDS = [
     [0, 34, 82, 126, 192],
     [0, 6, 52, 92, 132],
@@ -113,13 +116,14 @@ def main():
     print()
     print("P5R 五维查看器   存档目录：" + root)
     print("=" * 96)
-    header = f"{'存档':<8}{'保存时间':<14}" + "".join(f"{c:<14}" for c in NAMES)
+    header = f"{'存档':<8}{'保存时间':<14}" + "".join(f"{NAMES[i]:<14}" for i in ORDER)
     print(header)
     print("-" * 96)
     for r in rows:
         t = time.strftime("%m-%d %H:%M", time.localtime(r["mtime"]))
         line = f"{r['slot']:<8}{t:<14}"
-        for i, v in enumerate(r["values"]):
+        for i in ORDER:
+            v = r["values"][i]
             lv = level_of(i, v)
             line += f"{v}(Lv{lv})".ljust(14)
         print(line)
@@ -129,7 +133,8 @@ def main():
     latest = rows[0]
     print()
     print(f"最新存档 {latest['slot']} 详细：")
-    for i, v in enumerate(latest["values"]):
+    for i in ORDER:
+        v = latest["values"][i]
         print(f"  {NAMES[i]}({NAMES_EN[i]})  {v:3d} 点   Lv{level_of(i, v)}   {next_gap(i, v)}")
     print()
 
@@ -142,12 +147,14 @@ def main():
         for r in rows:
             t = time.strftime("%Y-%m-%d %H:%M", time.localtime(r["mtime"]))
             line = f"{r['slot']:<8}{t:<18}"
-            for i, v in enumerate(r["values"]):
+            for i in ORDER:
+                v = r["values"][i]
                 line += f"{v}(Lv{level_of(i, v)})".ljust(14)
             f.write(line + "\n")
         f.write("-" * 96 + "\n\n")
         f.write(f"最新存档 {latest['slot']} 详细：\n")
-        for i, v in enumerate(latest["values"]):
+        for i in ORDER:
+            v = latest["values"][i]
             f.write(f"  {NAMES[i]}({NAMES_EN[i]})  {v:3d} 点   Lv{level_of(i, v)}   {next_gap(i, v)}\n")
     print(f"报告已写入：{out}")
 
