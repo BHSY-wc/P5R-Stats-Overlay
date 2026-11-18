@@ -4,6 +4,10 @@
 与 **Coop 羁绊**（Rank、好感点数、距下一级还差多少），全部直接读运行中游戏的内存，
 不用装 Mod、不用重启游戏。游戏没开时自动读最新存档，显示最后一次保存时的状态。
 
+[![演示视频：P5RMod 揭露正确选项、五维和人物好感度](docs/images/video-cover.jpg)](https://www.bilibili.com/video/BV1RXsU6tEdy/)
+
+> **演示视频**：[《P5RMod 揭露正确选项、五维和人物好感度》](https://www.bilibili.com/video/BV1RXsU6tEdy/) · 8 分 53 秒 · Bilibili（点封面直接播放）
+
 界面按 P5R 的饰品菜单风格做的：斜切色块、白色胶囊、红色 Lv 徽章、硬边黑红白配色，
 可收起成一条横条、鼠标穿透、全局快捷键、配色主题、托盘常驻。
 
