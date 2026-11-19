@@ -1800,6 +1800,8 @@ namespace P5ROverlay
         {
             var snap = new Snapshot { Live = false, SaveSlot = "（演示数据 · 仅用于排版自检）" };
             snap.Stats = new short[] { 90, 41, 41, 43, 33 };
+            snap.GameDayIdx = 81;      // 2016-06-21
+            snap.TimeZone = 5;         // 放学后
             int[,] demo =
             {
                 { 1, 5, 30 }, { 2, 5, 30 }, { 3, 5, 22 },   // 可升
@@ -1812,6 +1814,17 @@ namespace P5ROverlay
             LayoutControls();
             Application.DoEvents();
         }
+
+        /// <summary>自检：直接摆好日历页的状态（无游戏时截排版用）。</summary>
+        public void DebugCalendar(int mode, int month, int day)
+        {
+            _calPage.DebugView(mode, month, day);
+            Invalidate(true);
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：把点击转给日历页，返回它的状态描述。</summary>
+        public string DebugCalendarPress(string name) => _calPage.DebugPress(name);
 
         /// <summary>自检：强制换一套配色并复位不透明度。</summary>
         public void DebugForceTheme(Color bg, Color text, Color accent)

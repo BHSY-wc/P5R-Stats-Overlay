@@ -32,6 +32,26 @@ namespace P5ROverlay
                 return;
             }
 
+            // 无游戏时开一个带演示数据的窗口，方便外部脚本点按钮做交互自检
+            if (args.Any(a => a.Equals("--demo", StringComparison.OrdinalIgnoreCase)))
+            {
+                var d = new OverlayForm();
+                d.Location = new System.Drawing.Point(40, 40);
+                d.Show();
+                Pump(1500);
+                if (!d.HasData) { d.DebugDemoData(); Pump(200); }
+                d.DebugSetup(2, true);
+                Application.Run(d);
+                return;
+            }
+
+            if (args.Any(a => a.Equals("--uitest", StringComparison.OrdinalIgnoreCase)))
+            {
+                RunUiTest(AppContext.BaseDirectory);
+                Application.Exit();
+                return;
+            }
+
             if (args.Any(a => a.Equals("--shot", StringComparison.OrdinalIgnoreCase)))
             {
                 RunShot(AppContext.BaseDirectory);
@@ -94,6 +114,51 @@ namespace P5ROverlay
             catch { }
         }
 
+        /// <summary>交互自检：不开真鼠标，直接把点击喂给日历页，看状态切换对不对。</summary>
+        private static void RunUiTest(string dir)
+        {
+            var sb = new System.Text.StringBuilder();
+            var f = new OverlayForm();
+            f.Location = new System.Drawing.Point(40, 40);
+            f.Show();
+            Pump(1200);
+            if (!f.HasData) { f.DebugDemoData(); Pump(300); }
+            f.DebugSetup(2, true);
+            Pump(500);
+
+            void Step(string what, string key)
+            {
+                string r = f.DebugCalendarPress(key);
+                sb.AppendLine($"{what,-22} -> {r}");
+                Pump(120);
+            }
+
+            Step("初始（月视图）", "state");
+            Step("点「今」", "today");
+            Step("点「‹」前一天", "prev");
+            Step("点「›」两天", "next");
+            Step("点「›」", "next");
+            Step("点日期标题", "title");
+            Step("选 10 号", "dpday10");
+            Step("再开选日→下月", "title");
+            Step("选日浮层→下月", "dpnext");
+            Step("选 5 号", "dpday5");
+            Step("点「月历」返回", "back");
+            Step("月历点第 6 格", "cell5");
+            Step("弹层点面板外", "outside");
+            Step("月历再点「今」", "today");
+            Step("日视图点「月历」", "back");
+
+            try
+            {
+                File.WriteAllText(Path.Combine(dir, "uitest.txt"),
+                    sb.ToString(), System.Text.Encoding.UTF8);
+            }
+            catch { }
+            Log.W("交互自检完成");
+            f.DebugExit();
+        }
+
         /// <summary>自检截图：把四个页面各拍一张，存到 exe 同目录 shots\。</summary>
         private static void RunShot(string dir)
         {
@@ -110,7 +175,7 @@ namespace P5ROverlay
                 Pump(300);
             }
 
-            var pages = new[] { (0, "1_五维"), (1, "2_好感"), (2, "3_日志"), (3, "4_设置") };
+            var pages = new[] { (0, "1_五维"), (1, "2_好感"), (3, "4_日志"), (4, "5_设置") };
             foreach (var (page, name) in pages)
             {
                 f.DebugSetup(page, true);
@@ -118,6 +183,29 @@ namespace P5ROverlay
                 Pump(700);
                 f.ShotTo(Path.Combine(outDir, name + ".png"));
             }
+
+            // 日历三种形态：月视图（格子自动换行）/ 日详情弹层 / 整页日视图
+            f.DebugSetup(2, true);
+            f.DebugCalendar(0, 6, 21);
+            f.Location = new System.Drawing.Point(40, 40);
+            Pump(700);
+            f.ShotTo(Path.Combine(outDir, "3_日历_月.png"));
+
+            f.DebugCalendar(2, 6, 21);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "3b_日历_日详情.png"));
+
+            f.DebugCalendar(1, 6, 21);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "3c_日历_日视图.png"));
+
+            f.DebugCalendar(2, 6, 23);        // 一天 7 条，看大字下会不会溢出
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "3d_日历_日详情_多条.png"));
+
+            f.DebugCalendar(1, 6, 23);
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "3e_日历_日视图_多条.png"));
 
             f.DebugSetup(0, false);
             f.Location = new System.Drawing.Point(40, 40);
