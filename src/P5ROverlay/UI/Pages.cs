@@ -89,6 +89,44 @@ namespace P5ROverlay
             Invalidate();
         }
 
+        // ---- 攻略弹层（Coop 能力表 / 五维门槛），两个页面共用一套
+        protected readonly DetailView Detail = new DetailView();
+
+        /// <summary>这一点是否落在可点击的行上（子类实现，用来切手型光标）。</summary>
+        protected virtual bool HitRow(Point p) => false;
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (Detail.IsOpen)
+            {
+                Detail.MouseDown(e.Location);   // 弹层自己决定是关还是吃掉
+                Invalidate();
+                return;
+            }
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (!Detail.IsOpen)
+                Cursor = HitRow(e.Location) ? Cursors.Hand : Cursors.Default;
+            else
+                Cursor = Cursors.Default;
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            Cursor = Cursors.Default;
+            base.OnMouseLeave(e);
+        }
+
+        /// <summary>子类 OnPaint 的最后一步：弹层永远盖在最上面。</summary>
+        protected void PaintDetail(Graphics g)
+        {
+            if (Detail.IsOpen) Detail.Paint(g, ClientRectangle, T);
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing) _anim.Dispose();
@@ -194,6 +232,19 @@ namespace P5ROverlay
     {
         private readonly short[] _stats = new short[5];
         private bool _hasPrev;
+        private readonly RectangleF[] _rowHit = new RectangleF[5];   // 按内存下标存，供点击命中
+
+        public StatPage()
+        {
+            SetStyle(ControlStyles.Selectable, true);
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            if (Detail.IsOpen) { Detail.Wheel(e.Delta); Invalidate(); return; }
+            base.OnMouseWheel(e);
+        }
+
 
         public void SetData(short[] s)
         {
@@ -234,6 +285,31 @@ namespace P5ROverlay
                 int i = (order != null && d < order.Length) ? order[d] : d;
                 DrawStatRow(g, i, padX, startY + d * rowH, fullW, rowH - 6);
             }
+
+            PaintDetail(g);
+        }
+
+        protected override bool HitRow(Point p)
+        {
+            for (int i = 0; i < 5; i++)
+                if (_rowHit[i].Width > 0 && _rowHit[i].Contains(p)) return true;
+            return false;
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (Detail.IsOpen) { base.OnMouseDown(e); Invalidate(); return; }
+
+            for (int i = 0; i < 5; i++)
+            {
+                if (_rowHit[i].Width <= 0 || !_rowHit[i].Contains(e.Location)) continue;
+                int pts = _stats[i];
+                Detail.OpenStat(i, GameTables.StatLevel(i, pts), pts);
+                Focus();          // 拿到焦点，滚轮才会送到这个 Panel 而不是窗口
+                Invalidate();
+                return;
+            }
+            base.OnMouseDown(e);
         }
 
         private void DrawStatRow(Graphics g, int i, int x, int y, int w, int h)
@@ -266,7 +342,10 @@ namespace P5ROverlay
             double shownRatio = ratio * ease;
 
             var block = new RectangleF(x + 6 + slide, y + 2, w - 12, h - 4);
-            if (block.Width < 60 || block.Height < 24) return;
+            if (block.Width < 60 || block.Height < 24) { _rowHit[i] = RectangleF.Empty; return; }
+
+            // 命中区用不含动画位移的稳定矩形，行正在滑也能点到
+            _rowHit[i] = new RectangleF(x + 6, y + 2, w - 12, h - 4);
 
             // --- 行底板（满级 = 红块，普通 = 深灰块 + 细白边）
             using (var p = P5R.Skew(block))
@@ -354,6 +433,9 @@ namespace P5ROverlay
         private readonly List<CoopRow> _rows = new List<CoopRow>();
         private int _scroll;
 
+        private struct Hit { public RectangleF Rect; public int Id, Rank; public string Name, Arcana; }
+        private readonly List<Hit> _hit = new List<Hit>();   // 每帧重建，只含当前可见的行
+
         private const int HeaderH = 26;
         private const int RowH = 52;
         private const int HintH = 30;
@@ -406,9 +488,31 @@ namespace P5ROverlay
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
+            if (Detail.IsOpen) { Detail.Wheel(e.Delta); Invalidate(); return; }
             _scroll = Math.Max(0, Math.Min(MaxScroll, _scroll - e.Delta / 3));
             Invalidate();
             base.OnMouseWheel(e);
+        }
+
+        protected override bool HitRow(Point p)
+        {
+            foreach (var h in _hit) if (h.Rect.Contains(p)) return true;
+            return false;
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (Detail.IsOpen) { base.OnMouseDown(e); Invalidate(); return; }
+
+            foreach (var h in _hit)
+            {
+                if (!h.Rect.Contains(e.Location)) continue;
+                Detail.OpenCoop(h.Id, h.Name, h.Arcana, h.Rank);
+                Focus();
+                Invalidate();
+                return;
+            }
+            base.OnMouseDown(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -417,6 +521,7 @@ namespace P5ROverlay
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             PaintBackdrop(g);
+            _hit.Clear();
 
             if (_rows.Count == 0)
             {
@@ -425,6 +530,7 @@ namespace P5ROverlay
                 P5R.Text(g, "还没有已解锁的 Coop —— 进游戏后会自动刷新", f,
                     new RectangleF(0, Height * 0.42f, Width, 40), Theme.Blend(T.Text, T.Bg, 0.35),
                     StringAlignment.Center, StringAlignment.Center, 0f, false);
+                PaintDetail(g);
                 return;
             }
 
@@ -462,6 +568,8 @@ namespace P5ROverlay
                     P5R.Fill(g, p, Color.FromArgb(210, T.Text));
                 }
             }
+
+            PaintDetail(g);
         }
 
         private void DrawHeader(Graphics g, CoopRow r, int x, int y, int w)
@@ -487,6 +595,12 @@ namespace P5ROverlay
 
             var block = new RectangleF(x + 6 + slide, y + 3, w - 12, RowH - 7);
             if (block.Width < 80) return;
+
+            _hit.Add(new Hit
+            {
+                Rect = new RectangleF(x + 6, y + 3, w - 12, RowH - 7),
+                Id = r.Id, Rank = r.Rank, Name = r.Name, Arcana = r.Arcana,
+            });
 
             // 底板：满级紫 / 可升级绿 / 普通深灰
             Color fillTop, fillBot, edge;
