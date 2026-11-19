@@ -121,6 +121,15 @@ namespace P5ROverlay
 
         private Rectangle _panel, _listArea, _closeRect;
 
+        // ---- 字号缩放：好感能力表放大 1.5 倍，五维门槛放大 2 倍（原来一律 11~13px，看着太吃力）
+        private float S => _statMode ? 2f : 1.5f;
+        private float NamePx => 13.5f * S;
+        private float DescPx => 11.2f * S;
+        private float BadgeW => (_statMode ? 44f : 40f) * S;
+        private float BadgeH => 17f * S;
+        private float NameH => NamePx * 1.55f;
+        private float TextX => 10f + BadgeW + 8f * S;      // 行内文字起点（相对行左边）
+
         // ---------------------------------------------------------------- 打开
         public void OpenCoop(int cid, string name, string arcana, int rank)
         {
@@ -245,7 +254,7 @@ namespace P5ROverlay
 
             if (_empty.Length > 0 && _rows.Count == 0)
             {
-                using var f = P5R.F(12.5f);
+                using var f = P5R.F(12.5f * S);
                 P5R.Text(g, _empty, f, new RectangleF(_listArea.X, _listArea.Y + _listArea.Height * 0.4f,
                     _listArea.Width, 30), Theme.Blend(T.Text, T.Bg, 0.40),
                     StringAlignment.Center, StringAlignment.Center, 0f, false);
@@ -253,8 +262,8 @@ namespace P5ROverlay
 
             DrawScroll(g, T);
 
-            using (var f = P5R.F(9.5f))
-                TextRenderer.DrawText(g, _statMode ? "滚轮滚动　·　点空白处关闭" : "滚轮滚动　·　点空白处关闭",
+            using (var f = P5R.F(10f))
+                TextRenderer.DrawText(g, "滚轮滚动　·　点空白处关闭",
                     f, new Rectangle(_panel.X + 14, _panel.Bottom - footH + 3, _panel.Width - 28, footH - 4),
                     Theme.Blend(T.Text, T.Bg, 0.52),
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
@@ -274,14 +283,16 @@ namespace P5ROverlay
             }
             P5R.Halftone(g, new RectangleF(head.X, head.Y, head.Width, 50), Color.FromArgb(40, Color.White), 6, 1.1f);
 
-            using (var f = P5R.F(Math.Min(21f, _panel.Width * 0.085f + 9f), FontStyle.Bold))
-                P5R.Text(g, _title, f, new RectangleF(head.X + 20, head.Y + 4, _panel.Width - 120, 42),
+            float titlePx = Math.Min(21f + (S - 1f) * 7f, _panel.Width * 0.10f + 9f);
+            using (var f = P5R.F(titlePx, FontStyle.Bold))
+                P5R.Text(g, _title, f, new RectangleF(head.X + 20, head.Y + 3, _panel.Width - 120, 44),
                     P5R.Paper, StringAlignment.Near, StringAlignment.Center, -0.16f, true);
 
             if (_sub.Length > 0)
             {
-                using var f2 = P5R.F(10.5f, FontStyle.Bold);
-                var sz = g.MeasureString(_title, P5R.F(21f, FontStyle.Bold), 1000);
+                using var f2 = P5R.F(10.5f + (S - 1f) * 4f, FontStyle.Bold);
+                using var ft = P5R.F(titlePx, FontStyle.Bold);
+                var sz = g.MeasureString(_title, ft, 1000);
                 float x = Math.Min(head.X + 24 + sz.Width, _panel.Right - 120);
                 TextRenderer.DrawText(g, _sub, f2,
                     new Rectangle((int)x + 6, _panel.Y + 16, 104, 20), Color.FromArgb(236, 232, 228),
@@ -312,20 +323,20 @@ namespace P5ROverlay
             _layoutW = w;
             _h.Clear();
 
-            using var fName = P5R.F(13.5f, FontStyle.Bold);
-            using var fDesc = P5R.F(11.2f);
+            using var fDesc = P5R.F(DescPx);
+            float wrapW = Math.Max(60f, w - TextX - 4f);
 
             float total = 8;
             foreach (var r in _rows)
             {
                 float h;
-                if (r.Desc.Length == 0) h = 28f;
+                if (r.Desc.Length == 0) h = Math.Max(BadgeH + 10f * S, NameH + 8f * S);
                 else
                 {
                     // 不设 NoWrap：按可用宽度折行，长描述不裁切
-                    float dh = g.MeasureString(r.Desc, fDesc, Math.Max(60, w - 62)).Height;
-                    dh = Math.Max(15f, dh);
-                    h = 25f + dh + 9f;
+                    float dh = g.MeasureString(r.Desc, fDesc, (int)wrapW).Height;
+                    dh = Math.Max(DescPx * 1.4f, dh);
+                    h = NameH + dh + 8f * S;
                 }
                 _h.Add(h);
                 total += h;
@@ -339,13 +350,12 @@ namespace P5ROverlay
             bool on = r.On;
 
             // 左侧状态竖条
-            var tick = new RectangleF(x, y + 5, 4, h - 12);
+            var tick = new RectangleF(x, y + 5 * S, Math.Max(4f, 3f * S), Math.Max(6f, h - 10 * S));
             if (h > 18)
                 P5R.Slab(g, tick, r.Story ? Color.FromArgb(190, 226, 176, 64) : (on ? T.Accent : Color.FromArgb(80, P5R.Wire)));
 
             // 等级徽章
-            float bw = _statMode ? 44f : 40f;
-            var badge = new RectangleF(x + 10, y + 4, bw, 17);
+            var badge = new RectangleF(x + 10, y + 4 * S, BadgeW, BadgeH);
             string bt = _statMode ? ("Lv" + r.Lv) : (r.Story ? "剧情" : "R" + r.Lv);
 
             Color badgeFill, badgeText;
@@ -354,21 +364,22 @@ namespace P5ROverlay
             else { badgeFill = Color.FromArgb(150, P5R.SlabLo); badgeText = Color.FromArgb(150, P5R.Ash); }
 
             P5R.Slab(g, badge, badgeFill, Color.FromArgb(60, P5R.Wire));
-            using (var f = P5R.F(Math.Min(10.5f, badge.Height * 0.66f), FontStyle.Bold))
+            using (var f = P5R.F(Math.Min(10.5f * S, badge.Height * 0.62f), FontStyle.Bold))
                 TextRenderer.DrawText(g, bt, f, Rectangle.Round(badge), badgeText,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
-            float tx = badge.Right + 10;
+            float tx = x + TextX;
             float tw = Math.Max(40f, x + w - tx - 4);
+            float nameTop = y + 3f * S;
 
             // 名称
             Color nameColor = on ? T.Text : Theme.Blend(T.Text, T.Bg, 0.66);
             if (r.Story) nameColor = Theme.Blend(T.Text, P5R.Ink, 0.35);
 
-            using (var f = P5R.F(13.5f, FontStyle.Bold))
+            using (var f = P5R.F(NamePx, FontStyle.Bold))
                 TextRenderer.DrawText(g, r.Name, f,
-                    new Rectangle((int)tx, (int)y + 2, (int)tw, 22), nameColor,
+                    new Rectangle((int)tx, (int)nameTop, (int)tw, (int)NameH), nameColor,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
 
@@ -376,8 +387,8 @@ namespace P5ROverlay
             if (r.Desc.Length > 0)
             {
                 Color dc = on ? Theme.Blend(T.Text, T.Bg, 0.22) : Theme.Blend(T.Text, T.Bg, 0.68);
-                using var f = P5R.F(11.2f);
-                var box = new RectangleF(tx, y + 25, tw, h - 31);
+                using var f = P5R.F(DescPx);
+                var box = new RectangleF(tx, nameTop + NameH, tw, Math.Max(DescPx, h - NameH - 8f * S));
                 using var sf = new StringFormat(StringFormat.GenericTypographic)
                 {
                     Alignment = StringAlignment.Near,

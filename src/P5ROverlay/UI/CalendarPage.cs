@@ -188,6 +188,7 @@ namespace P5ROverlay
             _month = d.Month;
             _ov = Ov.None;
             if (mode == 1) { OpenDayPage(d); return; }
+            if (mode == 3) { OpenDayPage(d); OpenDayPick(); return; }
             _view = View.Month;
             if (mode == 2) OpenDay(d);
             Invalidate();
@@ -1165,12 +1166,21 @@ namespace P5ROverlay
                 P5R.Text(g, "选择日期", f, new RectangleF(head.X + 18, head.Y, 100, 32),
                     P5R.Paper, StringAlignment.Near, StringAlignment.Center, -0.16f, true);
 
-            _dpPrev = new RectangleF(_ovPanel.Right - 132, _ovPanel.Y + 6, 24, 24);
-            _dpNext = new RectangleF(_ovPanel.Right - 28, _ovPanel.Y + 6, 24, 24);
+            // 月份文字按实际宽度摆位：以前写死 74px 的框，字一长就往左溢出，被 ‹ 按钮盖掉半个「2」
+            string mlab = $"{_dpYear} 年 {_dpMonth} 月";
+            float mw;
+            using (var fm = P5R.F(13f, FontStyle.Bold))
+                mw = TextRenderer.MeasureText(mlab, fm, new Size(2000, 40), TextFormatFlags.NoPadding).Width;
+            mw = Math.Min(mw, Math.Max(40f, _ovPanel.Width - 190f));
+
+            _dpNext = new RectangleF(_ovPanel.Right - 12 - 24, _ovPanel.Y + 6, 24, 24);
+            _dpPrev = new RectangleF(_dpNext.X - 8 - mw - 8 - 24, _ovPanel.Y + 6, 24, 24);
+
             using (var f = P5R.F(13f, FontStyle.Bold))
-                TextRenderer.DrawText(g, $"{_dpYear} 年 {_dpMonth} 月", f,
-                    new Rectangle((int)_dpPrev.Right + 2, (int)_dpPrev.Y, 74, 24),
-                    P5R.Paper, TextFormatFlags.Right | TextFormatFlags.VerticalCenter |
+                TextRenderer.DrawText(g, mlab, f,
+                    new Rectangle((int)_dpPrev.Right + 6, (int)_dpPrev.Y,
+                                  (int)(_dpNext.X - _dpPrev.Right - 12), 24),
+                    P5R.Paper, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
             var first = new DateTime(2016, 4, 1);

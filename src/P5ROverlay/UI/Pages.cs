@@ -313,6 +313,16 @@ namespace P5ROverlay
             base.OnMouseDown(e);
         }
 
+        /// <summary>自检钩子：直接点开某一项的攻略层。</summary>
+        public void DebugOpenStat(int i)
+        {
+            if (i < 0 || i > 4) return;
+            int pts = _stats[i];
+            Detail.OpenStat(i, GameTables.StatLevel(i, pts), pts);
+            Invalidate();
+            Update();
+        }
+
         private void DrawStatRow(Graphics g, int i, int x, int y, int w, int h)
         {
             int pts = _stats[i];
@@ -499,6 +509,16 @@ namespace P5ROverlay
         {
             foreach (var h in _hit) if (h.Rect.Contains(p)) return true;
             return false;
+        }
+
+        /// <summary>自检钩子：直接点开第 i 个可见角色的能力表。</summary>
+        public void DebugOpenCoop(int i)
+        {
+            Invalidate(); Update();                      // 先画一遍，_hit 才有值
+            if (_hit.Count == 0) return;
+            var h = _hit[Math.Max(0, Math.Min(i, _hit.Count - 1))];
+            Detail.OpenCoop(h.Id, h.Name, h.Arcana, h.Rank);
+            Invalidate(); Update();
         }
 
         protected override void OnMouseDown(MouseEventArgs e)

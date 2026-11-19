@@ -207,6 +207,26 @@ namespace P5ROverlay
             Pump(400);
             f.ShotTo(Path.Combine(outDir, "3e_日历_日视图_多条.png"));
 
+            // 攻略弹层：五维门槛（2 倍字）/ 好感能力表（1.5 倍字）
+            f.DebugDetail(0, 3);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "1b_五维_解锁项.png"));
+
+            f.DebugDetail(1, 2);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "2b_好感_能力表.png"));
+
+            f.DebugDetail(1, 8);      // 长描述，看 1.5 倍字下折行是否正常
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "2c_好感_能力表_长文本.png"));
+
+            // 选日浮层：看月份文字有没有被 ‹ › 按钮压住
+            f.DebugSetup(2, true);
+            f.DebugCalendar(3, 6, 21);
+            f.Location = new System.Drawing.Point(40, 40);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "3f_日历_选日.png"));
+
             f.DebugSetup(0, false);
             f.Location = new System.Drawing.Point(40, 40);
             Pump(600);

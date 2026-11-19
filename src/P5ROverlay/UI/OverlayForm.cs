@@ -1823,6 +1823,25 @@ namespace P5ROverlay
             Application.DoEvents();
         }
 
+        /// <summary>自检：直接打开攻略弹层（0 = 五维门槛，1 = 好感能力表）。</summary>
+        public void DebugDetail(int kind, int idx)
+        {
+            _page = kind == 0 ? PAGE_STAT : PAGE_COOP;
+            _expanded = true;
+            Opacity = 1.0;
+            ApplyModeSize(false);
+            LayoutControls();
+            UpdateTabStyles();
+            Invalidate(true);
+            Application.DoEvents();
+
+            if (kind == 0) _statPage.DebugOpenStat(idx);
+            else _coopPage.DebugOpenCoop(idx);
+
+            Invalidate(true);
+            Application.DoEvents();
+        }
+
         /// <summary>自检：把点击转给日历页，返回它的状态描述。</summary>
         public string DebugCalendarPress(string name) => _calPage.DebugPress(name);
 
