@@ -548,7 +548,7 @@ namespace P5ROverlay
             {
                 DrawNoteHint(g, "♪ = +5 点　♪♪ = +10 点　♪♪♪ = +15 点", "同塔罗 ×1.5");
                 using var f = P5R.F(13f, FontStyle.Bold);
-                P5R.Text(g, "还没有已解锁的 Coop —— 进游戏后会自动刷新", f,
+                P5R.Text(g, "还没读到 Coop 数据 —— 进入存档后会自动刷出（不用重启面板）", f,
                     new RectangleF(0, Height * 0.42f, Width, 40), Theme.Blend(T.Text, T.Bg, 0.35),
                     StringAlignment.Center, StringAlignment.Center, 0f, false);
                 PaintDetail(g);

@@ -61,9 +61,19 @@ namespace P5ROverlay
         private long _statsAddr;
         private long _coopAddr;
         private long _dateAddr;
+        private long _lastLocate;                   // 上次尝试定位 Coop/日期的时间戳（TickCount64）
+        private const int LocateRetryMs = 2000;     // 补定位的最小间隔，防止每轮都去翻内存
 
         public bool Attached => _h != IntPtr.Zero && _statsAddr != 0;
         public int Pid => _pid;
+
+        /// <summary>自检：把 Coop / 日期地址清成「未定位」，用来模拟「面板比存档先打开」的状态。</summary>
+        public void DebugForgetAux()
+        {
+            _coopAddr = 0;
+            _dateAddr = 0;
+            _lastLocate = 0;
+        }
 
         public void Dispose()
         {
@@ -128,6 +138,7 @@ namespace P5ROverlay
             _statsAddr = best;
             _coopAddr = LocateCoop(_statsAddr);
             _dateAddr = LocateDate(_statsAddr);
+            _lastLocate = Environment.TickCount64;
 
             Log.W($"已附加 P5R.exe（PID {_pid}），基址 0x{_moduleBase:X}，" +
                   $"签名 {hits.Count} 处，五维 0x{_statsAddr:X}，" +
@@ -318,7 +329,40 @@ namespace P5ROverlay
             if (raw == null) return null;
 
             var snap = new Snapshot { Live = true, Stamp = DateTime.Now };
-            for (int i = 0; i < 5; i++) snap.Stats[i] = BitConverter.ToInt16(raw, i * 2);
+            bool sane = true;
+            for (int i = 0; i < 5; i++)
+            {
+                short v = BitConverter.ToInt16(raw, i * 2);
+                snap.Stats[i] = v;
+                if (v < 0 || v > 3000) sane = false;
+            }
+            // 五维读出乱码：多半是附加时挑错了签名命中，返回 null 让外层重新附加
+            if (!sane) return null;
+
+            // 面板可能比「进存档」更早打开：那时五维、Coop、日期块全是 0，定位必然失败。
+            // 所以不把「定位不到」当成终态 —— 一旦五维出现非 0（存档载入），就限速补定位，
+            // 不用重启面板。日期块（日历页）同一个毛病，一起补。
+            bool hasSave = false;
+            for (int i = 0; i < 5; i++) if (snap.Stats[i] != 0) { hasSave = true; break; }
+
+            if (hasSave)
+            {
+                long now = Environment.TickCount64;
+                if (now - _lastLocate >= LocateRetryMs)
+                {
+                    _lastLocate = now;
+                    if (_coopAddr == 0)
+                    {
+                        _coopAddr = LocateCoop(_statsAddr);
+                        if (_coopAddr != 0) Log.W($"存档载入后补定位 Coop：0x{_coopAddr:X}");
+                    }
+                    if (_dateAddr == 0)
+                    {
+                        _dateAddr = LocateDate(_statsAddr);
+                        if (_dateAddr != 0) Log.W($"存档载入后补定位日期：0x{_dateAddr:X}");
+                    }
+                }
+            }
 
             if (_coopAddr != 0)
             {
@@ -336,11 +380,14 @@ namespace P5ROverlay
                         if (GameTables.Coops.ContainsKey(id) && rk >= 0 && rk <= 10)
                             snap.Coops.Add(new CoopEntry { Id = id, Rank = rk, Points = pt });
                     }
+
+                    // 地址在、内容却是空的：进存档前误命中了别的块，清掉下轮重找
+                    if (snap.Coops.Count == 0) _coopAddr = 0;
                 }
                 else
                 {
                     // 地址失效（游戏重启），下次轮询重新定位
-                    _coopAddr = LocateCoop(_statsAddr);
+                    _coopAddr = 0;
                 }
             }
 

@@ -52,6 +52,13 @@ namespace P5ROverlay
                 return;
             }
 
+            // 读取自检：不开窗口，验证「面板比存档先打开」时能不能自动补定位
+            if (args.Any(a => a.Equals("--readtest", StringComparison.OrdinalIgnoreCase)))
+            {
+                RunReadTest(AppContext.BaseDirectory);
+                return;
+            }
+
             if (args.Any(a => a.Equals("--shot", StringComparison.OrdinalIgnoreCase)))
             {
                 RunShot(AppContext.BaseDirectory);
@@ -112,6 +119,33 @@ namespace P5ROverlay
                     sb.ToString(), System.Text.Encoding.UTF8);
             }
             catch { }
+        }
+
+        /// <summary>
+        /// 读取自检：附加游戏 → 读一帧 → 清空 Coop/日期地址（模拟「面板先于存档打开」）→
+        /// 再读一帧，看是否自动补定位回来。结果写 readtest.txt。
+        /// </summary>
+        private static void RunReadTest(string dir)
+        {
+            var sb = new System.Text.StringBuilder();
+            using var r = new GameReader();
+            sb.AppendLine(r.Attach(out string note) ? "附加成功，PID " + r.Pid : "附加失败：" + note);
+
+            string Fmt(Snapshot x) => x == null
+                ? "null"
+                : $"五维 [{string.Join(",", x.Stats)}]　Coop {x.Coops.Count} 条　" +
+                  $"日期 {(x.GameDayIdx > 0 ? x.GameDayIdx + "（tz " + x.TimeZone + "）" : "无")}";
+
+            sb.AppendLine("第一帧　　　：" + Fmt(r.Poll()));
+
+            r.DebugForgetAux();                 // 清成未定位
+            var again = r.Poll();
+            sb.AppendLine("清空地址后　：" + Fmt(again));
+            sb.AppendLine("补定位　　　：" + (again != null && again.Coops.Count > 0 && again.GameDayIdx > 0 ? "成功" : "失败"));
+
+            try { File.WriteAllText(Path.Combine(dir, "readtest.txt"), sb.ToString(), System.Text.Encoding.UTF8); }
+            catch { }
+            Log.W("读取自检完成");
         }
 
         /// <summary>交互自检：不开真鼠标，直接把点击喂给日历页，看状态切换对不对。</summary>
