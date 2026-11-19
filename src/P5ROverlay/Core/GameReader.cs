@@ -20,6 +20,30 @@ namespace P5ROverlay
         public string Source = "";             // 状态行文案
         public string SaveSlot = "";           // 存档参考（DATA11 · 22:46）
         public DateTime Stamp = DateTime.Now;
+
+        // ---- 游戏内日期：dayIdx 从 2016-04-01 起算（P5R 的日历就是这么存的）
+        public int GameDayIdx = -1;
+        public int TimeZone = -1;              // 0~4 白天 / 5 放学后 / 6 夜晚 / 7 深夜
+        public bool HasDate => GameDayIdx >= 0;
+
+        public static readonly DateTime CalendarOrigin = new DateTime(2016, 4, 1);
+        public DateTime GameDate => CalendarOrigin.AddDays(GameDayIdx);
+
+        /// <summary>5 及以前算白天（上午/午休/放学后），6 起算夜晚。</summary>
+        public bool IsNight => TimeZone >= 6;
+
+        public string TimeZoneName => TimeZoneText(TimeZone);
+
+        /// <summary>0~2 上午 / 3~4 白天 / 5 放学后 / 6 夜晚 / 7 深夜。</summary>
+        public static string TimeZoneText(int tz)
+        {
+            if (tz < 0) return "";
+            if (tz <= 2) return "上午";
+            if (tz <= 4) return "白天";
+            if (tz == 5) return "放学后";
+            if (tz == 6) return "夜晚";
+            return "深夜";
+        }
     }
 
     /// <summary>
@@ -36,6 +60,7 @@ namespace P5ROverlay
         private long _moduleBase, _moduleSize;
         private long _statsAddr;
         private long _coopAddr;
+        private long _dateAddr;
 
         public bool Attached => _h != IntPtr.Zero && _statsAddr != 0;
         public int Pid => _pid;
@@ -52,6 +77,7 @@ namespace P5ROverlay
             Dispose();
             _statsAddr = 0;
             _coopAddr = 0;
+            _dateAddr = 0;
 
             var procs = Process.GetProcessesByName("P5R");
             if (procs.Length == 0)
@@ -101,10 +127,12 @@ namespace P5ROverlay
             }
             _statsAddr = best;
             _coopAddr = LocateCoop(_statsAddr);
+            _dateAddr = LocateDate(_statsAddr);
 
             Log.W($"已附加 P5R.exe（PID {_pid}），基址 0x{_moduleBase:X}，" +
                   $"签名 {hits.Count} 处，五维 0x{_statsAddr:X}，" +
-                  $"Coop {( _coopAddr != 0 ? "0x" + _coopAddr.ToString("X") : "未定位")}" +
+                  $"Coop {( _coopAddr != 0 ? "0x" + _coopAddr.ToString("X") : "未定位")}，" +
+                  $"日期 {(_dateAddr != 0 ? "0x" + _dateAddr.ToString("X") : "未定位")}" +
                   $"（{sw.ElapsedMilliseconds} ms）");
             note = "";
             return true;
@@ -249,6 +277,39 @@ namespace P5ROverlay
             return bestAddr;
         }
 
+        /// <summary>
+        /// 日期块：8 字节 = (dayIdx u16, 标签 u16, dayIdx u16, 时段 u16)，
+        /// dayIdx 从 2016-04-01 起算，时段 5 = 放学后、6 = 夜晚。
+        /// 实测与五维数组同属 GlobalWork，相隔 -0x9190；换版本后自动退化为向上搜索。
+        /// </summary>
+        private long LocateDate(long statsAddr)
+        {
+            foreach (long cand in new[] { statsAddr - 0x9190 })
+                if (IsDateBlock(cand)) return cand;
+
+            // 兜底：往上找 0x5000，取最靠近五维的那个合法块
+            for (long a = statsAddr - 0x200; a > statsAddr - 0x6000; a -= 2)
+                if (IsDateBlock(a)) return a;
+            return 0;
+        }
+
+        private bool IsDateBlock(long a)
+        {
+            if (a <= 0x10000) return false;
+            var b = ReadBytes(a, 12);
+            if (b == null) return false;
+
+            int d1 = BitConverter.ToUInt16(b, 0);
+            int tag = BitConverter.ToUInt16(b, 2);
+            int d2 = BitConverter.ToUInt16(b, 4);
+            int tz = BitConverter.ToUInt16(b, 6);
+            int flag = BitConverter.ToUInt16(b, 8);
+
+            // d1 == d2 是这块结构最强的特征；dayIdx 从 1 起（0 是没读到的空块）
+            return d1 == d2 && d1 >= 1 && d1 <= 400 && tz <= 8 &&
+                   tag >= 0x0100 && tag <= 0x0110 && flag <= 1;
+        }
+
         /// <summary>读一帧。读不到返回 null（游戏已退出）。</summary>
         public Snapshot Poll()
         {
@@ -281,6 +342,23 @@ namespace P5ROverlay
                     // 地址失效（游戏重启），下次轮询重新定位
                     _coopAddr = LocateCoop(_statsAddr);
                 }
+            }
+
+            if (_dateAddr != 0)
+            {
+                var db = ReadBytes(_dateAddr, 8);
+                if (db != null)
+                {
+                    int d1 = BitConverter.ToUInt16(db, 0);
+                    int d2 = BitConverter.ToUInt16(db, 4);
+                    if (d1 == d2 && d1 >= 1 && d1 <= 400)
+                    {
+                        snap.GameDayIdx = d1;
+                        snap.TimeZone = BitConverter.ToUInt16(db, 6);
+                    }
+                    else _dateAddr = LocateDate(_statsAddr);
+                }
+                else _dateAddr = LocateDate(_statsAddr);
             }
             return snap;
         }

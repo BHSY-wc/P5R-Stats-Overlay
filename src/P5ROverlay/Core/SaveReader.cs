@@ -19,6 +19,7 @@ namespace P5ROverlay
 
         private const int STAT_OFF = 0x139E0;
         private const int COOP_OFF = 0x136A0;
+        private const int DATE_OFF = 0xA670;   // (dayIdx, 标签, dayIdx, 时段)，dayIdx 从 2016-04-01 起
         private const int COOP_N = 26;
 
         public static string Root
@@ -73,6 +74,18 @@ namespace P5ROverlay
                     Source = $"存档 {bestSlot:00}（{bestTime:MM-dd HH:mm} 保存）",
                 };
                 for (int i = 0; i < 5; i++) snap.Stats[i] = BitConverter.ToInt16(main, STAT_OFF + i * 2);
+
+                // 存档里的日期：保存那一刻的游戏内时间（日历页在没有游戏进程时用它兜底）
+                if (main.Length >= DATE_OFF + 8)
+                {
+                    int d1 = BitConverter.ToUInt16(main, DATE_OFF);
+                    int d2 = BitConverter.ToUInt16(main, DATE_OFF + 4);
+                    if (d1 == d2 && d1 <= 400)
+                    {
+                        snap.GameDayIdx = d1;
+                        snap.TimeZone = BitConverter.ToUInt16(main, DATE_OFF + 6);
+                    }
+                }
 
                 for (int k = 0; k < COOP_N; k++)
                 {

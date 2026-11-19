@@ -17,9 +17,9 @@ namespace P5ROverlay
         public const string AppAuthor = "冰寒石英制作";
 
         // ---- 页面
-        private const int PAGE_STAT = 0, PAGE_COOP = 1, PAGE_LOG = 2, PAGE_SET = 3;
-        private const int PageCount = 4;
-        private static readonly string[] TabNames = { "五维", "好感", "日志", "设置" };
+        private const int PAGE_STAT = 0, PAGE_COOP = 1, PAGE_CAL = 2, PAGE_LOG = 3, PAGE_SET = 4;
+        private const int PageCount = 5;
+        private static readonly string[] TabNames = { "五维", "好感", "日历", "日志", "设置" };
 
         // ---- 尺寸
         private static readonly Size DefaultCompact = new Size(300, 56);
@@ -65,6 +65,7 @@ namespace P5ROverlay
         private readonly Rectangle[] _tabRects = new Rectangle[PageCount];
         private StatPage _statPage;
         private CoopPage _coopPage;
+        private CalendarPage _calPage;
         private RichTextBox _logBox;
         private Panel _settings;
         private Label _statusLabel;
@@ -210,6 +211,7 @@ namespace P5ROverlay
 
             _statPage = new StatPage { Visible = false };
             _coopPage = new CoopPage { Visible = false };
+            _calPage = new CalendarPage { Visible = false };
 
             _logBox = new RichTextBox
             {
@@ -234,11 +236,12 @@ namespace P5ROverlay
 
             BuildSettingsPanel();
 
-            Controls.AddRange(new Control[] { _statPage, _coopPage, _logBox, _settings, _statusLabel, _title, _btnExpand, _btnHide });
+            Controls.AddRange(new Control[] { _statPage, _coopPage, _calPage, _logBox, _settings, _statusLabel, _title, _btnExpand, _btnHide });
             Controls.AddRange(_tabs);
             _settings.BringToFront();
             _statPage.BringToFront();
             _coopPage.BringToFront();
+            _calPage.BringToFront();
             _logBox.BringToFront();
         }
 
@@ -549,6 +552,7 @@ namespace P5ROverlay
 
             _statPage?.SetTheme(_theme);
             _coopPage?.SetTheme(_theme);
+            _calPage?.SetTheme(_theme);
 
             if (_logBox != null)
             {
@@ -697,7 +701,7 @@ namespace P5ROverlay
             if (!_expanded)
             {
                 // 收起态：只有标题一行，别的一概不显示
-                _statPage.Visible = _coopPage.Visible = _logBox.Visible = _settings.Visible = false;
+                _statPage.Visible = _coopPage.Visible = _calPage.Visible = _logBox.Visible = _settings.Visible = false;
                 _statusLabel.Visible = false;
                 _title.SetBounds(16, 4, Math.Max(60, w - 92), Math.Max(20, h - 8));
                 return;
@@ -712,10 +716,12 @@ namespace P5ROverlay
 
             _statPage.Bounds = body;
             _coopPage.Bounds = body;
+            _calPage.Bounds = body;
             _logBox.Bounds = new Rectangle(body.X + 8, body.Y + 6, body.Width - 16, body.Height - 12);
 
             _statPage.Visible = _page == PAGE_STAT;
             _coopPage.Visible = _page == PAGE_COOP;
+            _calPage.Visible = _page == PAGE_CAL;
             _logBox.Visible = _page == PAGE_LOG;
             _settings.Visible = _page == PAGE_SET;
             if (_page == PAGE_SET)
@@ -1574,6 +1580,7 @@ namespace P5ROverlay
             _snap = s;
             _statPage.SetData(s.Stats);
             _coopPage.SetData(BuildCoopRows(s.Coops));
+            _calPage.SetGameDate(s.GameDayIdx, s.TimeZone);
 
             double avg = s.Stats.Average(v => v);
             bool empty = s.Stats.All(v => v == 0);

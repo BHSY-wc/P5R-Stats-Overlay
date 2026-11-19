@@ -67,6 +67,7 @@ namespace P5ROverlay
 
         protected PageBase()
         {
+            BackColor = T.Bg2;      // 实色底，避免分层窗口把游戏画面透上来
             DoubleBuffered = true;
             SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
             BorderStyle = BorderStyle.None;
@@ -137,7 +138,7 @@ namespace P5ROverlay
         /// <summary>整页底色：黑 + 右侧斜纹 + 半调网点，模拟 P5R 的墙面。</summary>
         protected void PaintBackdrop(Graphics g)
         {
-            using (var b = new SolidBrush(T.Bg)) g.FillRectangle(b, ClientRectangle);
+            g.Clear(T.Bg);
 
             // 右侧两条出血红斜带
             var st = g.Save();
