@@ -24,6 +24,17 @@ namespace P5ROverlay
         // 必须与 GameTables.StatNames 同序：[知识, 魅力, 灵巧, 勇气, 体贴]
         private static readonly string[] Keys = { "知识", "魅力", "灵巧", "勇气", "体贴" };
 
+        // 必须声明在 _gates 之前：静态字段按声明顺序初始化，Build() 里要用到它
+        /// <summary>
+        /// 写在 Wiki「事件基础信息 → 出现条件」里、但没进好感需求表的门槛。
+        /// 好感需求表存的是「升级要多少点」，而 Coop 能不能开启另有一套五维条件，两边互补。
+        /// </summary>
+        private static readonly (int Stat, int Lv, string Text)[] Extra =
+        {
+            (0, 3, "新岛真 Coop 开启"),     // 金城悔改后，知识 3 级以上
+            (3, 4, "岩井宗久 Coop 开启"),   // 5/6 以后，勇气 4 级以上（「大胆无畏」）
+        };
+
         private static readonly List<Gate>[] _gates = Build();
 
         public static List<Gate> Get(int statIdx)
@@ -62,6 +73,11 @@ namespace P5ROverlay
                     }
                 }
             }
+
+            // Wiki「出现条件」里另有、但没写进好感需求表的门槛
+            foreach (var e in Extra)
+                if (e.Stat >= 0 && e.Stat < 5)
+                    res[e.Stat].Add(new Gate(e.Lv, e.Text));
 
             for (int i = 0; i < 5; i++)
             {
