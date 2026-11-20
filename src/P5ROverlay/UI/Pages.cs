@@ -713,23 +713,28 @@ namespace P5ROverlay
                 P5R.Chip(g, chip, P5R.Paper, Color.FromArgb(96, P5R.Ink), num, P5R.Ink, f);
 
             // --- R当前 → 还差N → R下一级（紧跟在 R 徽章后面，一块斜切标签）
-            //     「还差 N」白字；「▶R 下一级」统一用黑底绿字，和「可以升级」组里的写法一致
+            //     「还差 N」白字；「»R 下一级」黑底绿字，和「可以升级」组里的写法一致
+            //     » 在雅黑里是小号标点、贴基线，单独用大一号的字画，才像个箭头
             if (!max && r.Need.HasValue && r.Need.Value > 0)
             {
                 int gapPt = Math.Max(0, r.Need.Value - r.Points);
                 string sGap = gapPt > 0 ? "+" + gapPt : "";
-                string sNext = "▶R" + (r.Rank + 1);
+                string sArrow = "»";
+                string sNext = "R" + (r.Rank + 1);
                 using (var f = P5R.F(10.5f, FontStyle.Bold))
+                using (var fa = P5R.F(14f, FontStyle.Bold))
                 {
                     const TextFormatFlags mf = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix |
                                                TextFormatFlags.SingleLine;
                     var szG = TextRenderer.MeasureText(g, sGap, f, new Size(int.MaxValue, int.MaxValue), mf);
+                    var szA = TextRenderer.MeasureText(g, sArrow, fa, new Size(int.MaxValue, int.MaxValue), mf);
                     var szN = TextRenderer.MeasureText(g, sNext, f, new Size(int.MaxValue, int.MaxValue), mf);
 
-                    float padL = sGap.Length > 0 ? 8f : 11f;
+                    float padL = sGap.Length > 0 ? 8f : 10f;
                     float padR = 9f;
+                    float gapA = 2.5f;          // 数字 → 箭头、箭头 → R 的呼吸位
                     var cb = new RectangleF(rb.Right + 6, rb.Y,
-                                            padL + szG.Width + szN.Width + padR, rb.Height);
+                        padL + szG.Width + gapA + szA.Width + gapA + szN.Width + padR, rb.Height);
                     if (cb.Right < chip.X - 6)      // 窄面板放不下就不画，右侧数值框还有完整信息
                     {
                         P5R.Slab(g, cb, Color.FromArgb(215, P5R.Ink), Color.FromArgb(84, P5R.Wire));
@@ -738,14 +743,19 @@ namespace P5ROverlay
                         float tx = cb.X + padL;
                         if (sGap.Length > 0)
                         {
-                            var rg = new RectangleF(tx, cb.Y, szG.Width, cb.Height);
-                            TextRenderer.DrawText(g, sGap, f, Rectangle.Round(rg), P5R.Paper,
+                            TextRenderer.DrawText(g, sGap, f,
+                                Rectangle.Round(new RectangleF(tx, cb.Y, szG.Width, cb.Height)), P5R.Paper,
                                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
                                 TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
-                            tx += szG.Width;
+                            tx += szG.Width + gapA;
                         }
-                        var rn = new RectangleF(tx, cb.Y, szN.Width, cb.Height);
-                        TextRenderer.DrawText(g, sNext, f, Rectangle.Round(rn), green,
+                        TextRenderer.DrawText(g, sArrow, fa,
+                            Rectangle.Round(new RectangleF(tx, cb.Y - 0.5f, szA.Width, cb.Height)), green,
+                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                            TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                        tx += szA.Width + gapA;
+                        TextRenderer.DrawText(g, sNext, f,
+                            Rectangle.Round(new RectangleF(tx, cb.Y, szN.Width, cb.Height)), green,
                             TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
                             TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
                     }
