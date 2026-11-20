@@ -8,6 +8,8 @@ obj/
 p5r_overlay.ini
 p5r_overlay.log
 selftest.txt
+uitest.txt
+readtest.txt
 shots/
 _mem_addr.json
 
