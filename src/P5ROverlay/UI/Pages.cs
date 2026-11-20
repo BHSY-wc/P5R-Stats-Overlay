@@ -170,14 +170,15 @@ namespace P5ROverlay
         /// 顶部一行「音符换算」提示：斜切黑条 + 左侧红块。
         /// 返回占用的高度（调用方据此把正文往下挪）。
         /// </summary>
-        protected int DrawNoteHint(Graphics g, string main, string suffix)
+        protected int DrawNoteHint(Graphics g, string main, string suffix, float fs = 11.5f)
         {
-            const int padX = 14, h = 30;
+            const int padX = 14;
+            int h = (int)Math.Round(fs * 2.6f);        // 字号变高时横条一起长高，字不会被裁
             var bar = new RectangleF(padX + 6, 4, Math.Max(60, Width - padX * 2 - 12), h - 10);
             P5R.Slab(g, bar, Color.FromArgb(210, P5R.Ink), Color.FromArgb(50, P5R.Wire));
             P5R.Slab(g, new RectangleF(padX + 8, 6, 4, h - 14), T.Accent);
 
-            using (var f = P5R.F(11.5f, FontStyle.Bold))
+            using (var f = P5R.F(fs, FontStyle.Bold))
             using (var sf = new StringFormat(StringFormat.GenericTypographic)
             {
                 Alignment = StringAlignment.Near,
@@ -191,7 +192,7 @@ namespace P5ROverlay
                 if (!string.IsNullOrEmpty(suffix))
                 {
                     var sz = g.MeasureString(main, f, 10000, sf);
-                    float x = box.X + sz.Width + 8;
+                    float x = box.X + sz.Width + 18;
                     float w = box.Right - x;
                     if (w > 50)
                     {
@@ -235,6 +236,12 @@ namespace P5ROverlay
         private bool _hasPrev;
         private readonly RectangleF[] _rowHit = new RectangleF[5];   // 按内存下标存，供点击命中
 
+        /// <summary>五维页字号整体放大倍数（原始尺寸 × 1.3 后取整，见 <see cref="FS"/>）。</summary>
+        private const float FontScale = 1.3f;
+
+        /// <summary>原始字号 → 放大后的整数字号。</summary>
+        private static int FS(float px) => (int)Math.Round(px * FontScale);
+
         public StatPage()
         {
             SetStyle(ControlStyles.Selectable, true);
@@ -269,7 +276,7 @@ namespace P5ROverlay
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
             PaintBackdrop(g);
 
-            int hintH = DrawNoteHint(g, "♪ = +2 点　♪♪ = +3~4 点　♪♪♪ = +5/7/10 点", "占卜 ×1.5");
+            int hintH = DrawNoteHint(g, "♪ = +2 点　♪♪ = +3~4 点　♪♪♪ = +5/7/10 点", "占卜 ×1.5", FS(11.5f));
 
             int usable = Math.Max(200, Height - hintH - 8);
             int rowH = Math.Min(104, Math.Max(58, usable / 5));
@@ -330,19 +337,13 @@ namespace P5ROverlay
             var th = GameTables.StatTh[i];
             bool max = lv >= 5;
 
-            // 进度与文案
+            // 进度
             double ratio;
-            string next;
-            if (max)
-            {
-                ratio = 1.0;
-                next = "MAX";
-            }
+            if (max) ratio = 1.0;
             else
             {
                 int lo = th[lv - 1], hi = th[lv];
                 ratio = (pts - lo) / (double)Math.Max(1, hi - lo);
-                next = $"距 Lv{lv + 1} 还差 {hi - pts}";
             }
 
             // 动画：只有这一项的点数变了才播；没变就是满进度，不滑不滚
@@ -382,48 +383,66 @@ namespace P5ROverlay
             P5R.Slab(g, new RectangleF(block.X + 8, block.Y + 10, 4, Math.Min(24, block.Height - 20)),
                      max ? P5R.Paper : T.Accent);
 
-            // --- 名称
-            using (var f = P5R.F(Math.Min(19f, block.Height * 0.34f + 6f), FontStyle.Bold))
+            // --- 名称（字号已按 FontScale 放大）
+            using (var f = P5R.F(Math.Min(FS(19f), Math.Min((block.Height * 0.34f + 6f) * FontScale,
+                                                            block.Height * 0.40f)), FontStyle.Bold))
             {
                 P5R.Text(g, GameTables.StatNames[i], f,
-                    new RectangleF(block.X + 20, block.Y + 4, Math.Min(130, block.Width * 0.42f), block.Height * 0.52f),
+                    new RectangleF(block.X + 20, block.Y + 2, Math.Min(160, block.Width * 0.46f), block.Height * 0.56f),
                     max ? P5R.Ink : T.Text, StringAlignment.Near, StringAlignment.Center, -0.16f, !max);
             }
 
-            // --- 点数胶囊（右端）
-            float pillW = Math.Min(64f, Math.Max(46f, block.Width * 0.16f));
-            var pill = new RectangleF(block.Right - pillW - 10, block.Y + 6, pillW, Math.Min(26f, block.Height * 0.40f));
-            using (var f = P5R.F(Math.Min(15f, pill.Height * 0.62f), FontStyle.Bold))
-                P5R.Pill(g, pill, max ? P5R.Paper : P5R.Paper, shownPts.ToString(), P5R.Ink, f);
+            // --- 点数：平行四边形数值框（右端，P5R 的斜切标签）
+            float chipW = Math.Min(82f, Math.Max(56f, block.Width * 0.17f));
+            var chip = new RectangleF(block.Right - chipW - 10, block.Y + 4, chipW, Math.Min(34f, block.Height * 0.46f));
+            using (var f = P5R.F(Math.Min(FS(15f), chip.Height * 0.62f), FontStyle.Bold))
+                P5R.Chip(g, chip, P5R.Paper, Color.FromArgb(96, P5R.Ink), shownPts.ToString(), P5R.Ink, f);
 
             // --- 等级徽章
-            float badgeH = Math.Min(18f, block.Height * 0.26f);
-            var badge = new RectangleF(block.X + 20, block.Bottom - badgeH - 7, 44, badgeH);
+            float badgeH = Math.Min(24f, block.Height * 0.27f);
+            var badge = new RectangleF(block.X + 20, block.Bottom - badgeH - 6, 50, badgeH);
             P5R.Slab(g, badge, max ? P5R.Paper : T.Accent);
-            using (var f = P5R.F(Math.Max(9f, badgeH * 0.62f), FontStyle.Bold))
+            using (var f = P5R.F(Math.Max(11f, badgeH * 0.62f), FontStyle.Bold))
                 TextRenderer.DrawText(g, "Lv" + lv, f, Rectangle.Round(badge), max ? P5R.Ink : P5R.Paper,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
-            // --- 进度条
+            // --- 进度条（右侧原本留给小字的空间收回来，整条拉长）
             float barX = badge.Right + 8;
-            float barW = block.Right - barX - Math.Min(126f, block.Width * 0.30f);
+            float barW = block.Right - barX - 10;
+            var bar = RectangleF.Empty;
             if (barW > 24)
             {
-                var bar = new RectangleF(barX, badge.Y + badge.Height * 0.5f - 3.5f, barW, 7);
+                bar = new RectangleF(barX, badge.Y + badge.Height * 0.5f - 3.5f, barW, 7);
                 DrawBar(g, bar, shownRatio, max ? P5R.Paper : T.Accent, Color.FromArgb(190, P5R.Ink));
             }
 
-            // --- 距下一级
-            float tipW = Math.Min(126f, block.Width * 0.30f) - 4;
-            if (tipW > 40)
+            // --- 进度条上方：「还差 N  ▶  Lv下一级」
+            //     整组不再贴进度条左端，而是向右让出一段（约等于箭头原来的位置），箭头与 Lv 跟着右移
+            if (!max && bar.Width > 60 && th[lv] > pts)
             {
-                using var f = P5R.F(10.5f);
-                TextRenderer.DrawText(g, next, f,
-                    new Rectangle((int)(block.Right - tipW - 8), (int)(badge.Y - 1), (int)tipW, (int)badge.Height + 2),
-                    max ? P5R.Ink : Theme.Blend(T.Text, T.Bg, 0.42),
-                    TextFormatFlags.Right | TextFormatFlags.VerticalCenter |
-                    TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                using var fNum = P5R.F(FS(12f), FontStyle.Bold);
+                using var fTxt = P5R.F(FS(10.5f), FontStyle.Bold);
+
+                string sNum = (th[lv] - pts).ToString();
+                var szN = g.MeasureString(sNum, fNum);
+                var szT = g.MeasureString("▶ Lv" + (lv + 1), fTxt);
+
+                float gap = 6f;
+                float totalW = szN.Width + 2f + gap + szT.Width;
+                // 目标起点：bar.X 右移约 11% 条宽（夹在 28~76px），但保证整组不出条尾
+                float shift = Math.Min(110f, Math.Max(40f, bar.Width * 0.16f));
+                shift = Math.Min(shift, Math.Max(0f, bar.Width - totalW - 6f));
+                float numX = bar.X + shift;
+
+                var boxNum = new RectangleF(numX, bar.Y - 24f, szN.Width + 2f, 20f);
+                P5R.Text(g, sNum, fNum, boxNum, max ? P5R.Ink : P5R.RedHot,
+                         StringAlignment.Near, StringAlignment.Center, -0.14f, true);
+
+                var boxRest = new RectangleF(boxNum.Right + gap, boxNum.Y,
+                                             Math.Max(20f, bar.Right - boxNum.Right - gap), boxNum.Height);
+                P5R.Text(g, "▶ Lv" + (lv + 1), fTxt, boxRest, Theme.Blend(T.Text, T.Bg, 0.22),
+                         StringAlignment.Near, StringAlignment.Center, -0.14f, true);
             }
         }
     }
@@ -686,12 +705,52 @@ namespace P5ROverlay
                 TextRenderer.DrawText(g, "R" + r.Rank, f, Rectangle.Round(rb), max ? P5R.Ink : P5R.Paper,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
-            // 数值胶囊（第一行右端）
+            // 数值平行四边形框（第一行右端）
             string num = max ? "MAX" : (r.Need.HasValue ? $"{r.Points}/{r.Need.Value}" : "—");
-            float pillW = 62;
-            var pill = new RectangleF(block.Right - pillW - 10, block.Y + 5, pillW, 20);
+            float chipW = 64;
+            var chip = new RectangleF(block.Right - chipW - 10, block.Y + 5, chipW, 20);
             using (var f = P5R.F(11.5f, FontStyle.Bold))
-                P5R.Pill(g, pill, P5R.Paper, num, P5R.Ink, f);
+                P5R.Chip(g, chip, P5R.Paper, Color.FromArgb(96, P5R.Ink), num, P5R.Ink, f);
+
+            // --- R当前 → 还差N → R下一级（紧跟在 R 徽章后面，一块斜切标签）
+            //     「还差 N」白字；「▶R 下一级」统一用黑底绿字，和「可以升级」组里的写法一致
+            if (!max && r.Need.HasValue && r.Need.Value > 0)
+            {
+                int gapPt = Math.Max(0, r.Need.Value - r.Points);
+                string sGap = gapPt > 0 ? "+" + gapPt : "";
+                string sNext = "▶R" + (r.Rank + 1);
+                using (var f = P5R.F(10.5f, FontStyle.Bold))
+                {
+                    const TextFormatFlags mf = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix |
+                                               TextFormatFlags.SingleLine;
+                    var szG = TextRenderer.MeasureText(g, sGap, f, new Size(int.MaxValue, int.MaxValue), mf);
+                    var szN = TextRenderer.MeasureText(g, sNext, f, new Size(int.MaxValue, int.MaxValue), mf);
+
+                    float padL = sGap.Length > 0 ? 8f : 11f;
+                    float padR = 9f;
+                    var cb = new RectangleF(rb.Right + 6, rb.Y,
+                                            padL + szG.Width + szN.Width + padR, rb.Height);
+                    if (cb.Right < chip.X - 6)      // 窄面板放不下就不画，右侧数值框还有完整信息
+                    {
+                        P5R.Slab(g, cb, Color.FromArgb(215, P5R.Ink), Color.FromArgb(84, P5R.Wire));
+
+                        var green = Color.FromArgb(150, 240, 184);
+                        float tx = cb.X + padL;
+                        if (sGap.Length > 0)
+                        {
+                            var rg = new RectangleF(tx, cb.Y, szG.Width, cb.Height);
+                            TextRenderer.DrawText(g, sGap, f, Rectangle.Round(rg), P5R.Paper,
+                                TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                                TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                            tx += szG.Width;
+                        }
+                        var rn = new RectangleF(tx, cb.Y, szN.Width, cb.Height);
+                        TextRenderer.DrawText(g, sNext, f, Rectangle.Round(rn), green,
+                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                            TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                    }
+                }
+            }
 
             // 第二行：进度条 + 状态
             double ratio;
@@ -704,10 +763,13 @@ namespace P5ROverlay
             }
             else { ratio = 0; barFill = Theme.Blend(T.Text, T.Bg, 0.5); }
 
-            var bar = new RectangleF(innerX, block.Bottom - 13, Math.Max(40f, rowW - 120), 6);
+            // 「还差 N」已经挪到上面的 R 链条里了，这里不再重复；其余状态照旧
+            bool showState = !string.IsNullOrEmpty(r.State) && !r.State.StartsWith("还差");
+            var bar = new RectangleF(innerX, block.Bottom - 13,
+                                     Math.Max(40f, showState ? rowW - 120 : rowW - 10), 6);
             DrawBar(g, bar, ratio, barFill, Color.FromArgb(190, P5R.Ink));
 
-            if (!string.IsNullOrEmpty(r.State))
+            if (showState)
             {
                 using var f = P5R.F(11f, ready ? FontStyle.Bold : FontStyle.Regular);
                 TextRenderer.DrawText(g, r.State, f,

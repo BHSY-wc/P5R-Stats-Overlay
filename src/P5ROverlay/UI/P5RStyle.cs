@@ -125,6 +125,37 @@ namespace P5ROverlay
                 TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
         }
 
+        /// <summary>
+        /// 平行四边形数值框：P5R 里所有数字标签都是斜切块，没有圆角。
+        /// edge 传 Color.Transparent 就不描边。
+        /// </summary>
+        public static void Chip(Graphics g, RectangleF r, Color fill, Color edge, string text, Color ink, Font f,
+                                float lean = Lean)
+        {
+            using var p = Skew(r, lean);
+            Fill(g, p, fill);
+            if (edge.A > 0) Stroke(g, p, edge, 1f);
+            TextRenderer.DrawText(g, text, f, Rectangle.Round(r), ink,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
+        }
+
+        /// <summary>小号「▸」箭头，用于「还差 N ▸ 下一级」这种串联标签。</summary>
+        public static void Arrow(Graphics g, RectangleF r, Color c)
+        {
+            float h = r.Height * 0.62f, w = Math.Min(r.Width, h * 0.85f);
+            float cx = r.X + r.Width * 0.5f, cy = r.Y + r.Height * 0.5f;
+            using var p = new GraphicsPath();
+            p.AddPolygon(new[]
+            {
+                new PointF(cx - w * 0.5f, cy - h * 0.5f),
+                new PointF(cx + w * 0.5f, cy),
+                new PointF(cx - w * 0.5f, cy + h * 0.5f),
+            });
+            p.CloseFigure();
+            Fill(g, p, c);
+        }
+
         // ---------------------------------------------------------------- 半调网点
         private static readonly Dictionary<int, TextureBrush> Dots = new Dictionary<int, TextureBrush>();
 

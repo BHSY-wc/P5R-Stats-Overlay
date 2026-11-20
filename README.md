@@ -8,7 +8,7 @@
 
 > **演示视频**：[《P5RMod 揭露正确选项、五维和人物好感度》](https://www.bilibili.com/video/BV1RXsU6tEdy/) · 8 分 53 秒 · Bilibili（点封面直接播放）
 
-界面按 P5R 的饰品菜单风格做的：斜切色块、白色胶囊、红色 Lv 徽章、硬边黑红白配色，
+界面按 P5R 的饰品菜单风格做的：斜切色块、平行四边形数值标签、红色 Lv 徽章、硬边黑红白配色，
 可收起成一条横条、鼠标穿透、全局快捷键、配色主题、托盘常驻。
 
 > **配套项目**：[P5R-Dialogue-Annotation](https://github.com/BHSY-wc/P5R-Dialogue-Annotation)
