@@ -521,6 +521,30 @@ namespace P5ROverlay
             Invalidate(); Update();
         }
 
+        /// <summary>自检钩子：把已打开的弹层切到「能力 / 礼物」页。</summary>
+        public void DebugTab(int t)
+        {
+            Detail.DebugTab(t);
+            Invalidate(); Update();
+        }
+
+        /// <summary>自检钩子：按坐标模拟点页签，返回结果描述。</summary>
+        public string DebugClickTab(string which)
+        {
+            string r = Detail.DebugClickTab(which);
+            Invalidate(); Update();
+            return r;
+        }
+
+        /// <summary>自检钩子：按 Coop ID 直接打开弹层的指定页（不依赖列表里有没有这一行）。</summary>
+        public void DebugOpenCoopId(int cid, int rank, int tab)
+        {
+            if (!GameTables.Coops.TryGetValue(cid, out var info)) return;
+            Detail.OpenCoop(cid, info.Name, info.Arcana, rank);
+            if (tab != 0) Detail.DebugTab(tab);
+            Invalidate(); Update();
+        }
+
         protected override void OnMouseDown(MouseEventArgs e)
         {
             if (Detail.IsOpen) { base.OnMouseDown(e); Invalidate(); return; }

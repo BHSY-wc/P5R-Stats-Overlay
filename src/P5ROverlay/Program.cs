@@ -183,6 +183,15 @@ namespace P5ROverlay
             Step("月历再点「今」", "today");
             Step("日视图点「月历」", "back");
 
+            // 好感弹层的「能力 / 礼物」页签：走真实命中判定
+            sb.AppendLine();
+            f.DebugCoopDetail(7, 6, 0);
+            Pump(300);
+            sb.AppendLine($"打开好感弹层(能力页)     -> {f.DebugClickTab("state")}");
+            string r1 = f.DebugClickTab("gift");  sb.AppendLine($"点「礼物」页签          -> {r1}");
+            string r2 = f.DebugClickTab("ab");    sb.AppendLine($"点「能力」页签          -> {r2}");
+            string r3 = f.DebugClickTab("gift");  sb.AppendLine($"再点「礼物」页签        -> {r3}");
+
             try
             {
                 File.WriteAllText(Path.Combine(dir, "uitest.txt"),
@@ -253,6 +262,29 @@ namespace P5ROverlay
             f.DebugDetail(1, 8);      // 长描述，看 1.5 倍字下折行是否正常
             Pump(400);
             f.ShotTo(Path.Combine(outDir, "2c_好感_能力表_长文本.png"));
+
+            // 礼物页：看「能力 / 礼物」两页签、+50 徽章、字级是否与能力页一致
+            f.DebugCoopDetail(7, 6, 1);      // 高卷杏，六件礼物
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "2d_好感_礼物.png"));
+
+            f.DebugCoopDetail(17, 8, 1);     // 织田信也，七件礼物 + 长店名
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "2e_好感_礼物_多件.png"));
+
+            f.DebugCoopDetail(7, 6, 0);      // 切回能力页，确认页签状态跟着变
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "2f_好感_切回能力页.png"));
+
+            f.DebugCoopDetail(2, 4, 1);      // 摩尔加纳：没有礼物记录，看空态文案
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "2g_好感_礼物_空态.png"));
+
+            // 最小尺寸下页签会不会把标题挤没（DebugCoopDetail 会复原尺寸，所以先开再缩）
+            f.DebugCoopDetail(12, 5, 1);
+            f.Size = new System.Drawing.Size(432, 470);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "2h_好感_礼物_最小宽度.png"));
 
             // 选日浮层：看月份文字有没有被 ‹ › 按钮压住
             f.DebugSetup(2, true);

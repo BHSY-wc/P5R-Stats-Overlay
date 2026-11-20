@@ -1,0 +1,20 @@
+﻿初始（月视图）                -> view=Month ov=None date=2016-04-01 month=2016-06 expand=True follow=True scroll=0 cells=30
+点「今」                   -> view=Day ov=None date=2016-06-21 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 487,15)
+点「‹」前一天                -> view=Day ov=None date=2016-06-20 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 18,15)
+点「›」两天                 -> view=Day ov=None date=2016-06-21 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 196,15)
+点「›」                   -> view=Day ov=None date=2016-06-22 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 196,15)
+点日期标题                  -> view=Day ov=DayPick date=2016-06-22 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 107,15)
+选 10 号                 -> view=Day ov=None date=2016-06-10 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 380,247)
+再开选日→下月                -> view=Day ov=DayPick date=2016-06-10 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 107,15)
+选日浮层→下月                -> view=Day ov=DayPick date=2016-06-10 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 437,129)
+选 5 号                  -> view=Day ov=None date=2016-07-05 month=2016-06 expand=True follow=True scroll=0 cells=0  (clicked 238,238)
+点「月历」返回                -> view=Month ov=None date=2016-07-05 month=2016-07 expand=True follow=False scroll=0 cells=31  (clicked 543,15)
+月历点第 6 格               -> view=Month ov=DayPopup date=2016-07-05 month=2016-07 expand=True follow=False scroll=0 cells=31  (clicked 286,190)
+弹层点面板外                 -> view=Month ov=None date=2016-07-05 month=2016-07 expand=True follow=False scroll=0 cells=31  (clicked 3,559)
+月历再点「今」                -> view=Day ov=None date=2016-06-21 month=2016-07 expand=True follow=False scroll=0 cells=0  (clicked 487,15)
+日视图点「月历」               -> view=Month ov=None date=2016-06-21 month=2016-06 expand=True follow=True scroll=0 cells=30  (clicked 543,15)
+
+打开好感弹层(能力页)     -> 打开=True 当前页=能力 行数=10 页签=(379,20,66x26)/(451,20)
+点「礼物」页签          -> 已消费 x=484 y=33 → 仍打开=True 当前页=礼物
+点「能力」页签          -> 已消费 x=412 y=33 → 仍打开=True 当前页=能力
+再点「礼物」页签        -> 已消费 x=484 y=33 → 仍打开=True 当前页=礼物

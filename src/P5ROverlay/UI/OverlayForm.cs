@@ -1824,7 +1824,7 @@ namespace P5ROverlay
         }
 
         /// <summary>自检：直接打开攻略弹层（0 = 五维门槛，1 = 好感能力表）。</summary>
-        public void DebugDetail(int kind, int idx)
+        public void DebugDetail(int kind, int idx, int tab = 0)
         {
             _page = kind == 0 ? PAGE_STAT : PAGE_COOP;
             _expanded = true;
@@ -1836,7 +1836,29 @@ namespace P5ROverlay
             Application.DoEvents();
 
             if (kind == 0) _statPage.DebugOpenStat(idx);
-            else _coopPage.DebugOpenCoop(idx);
+            else
+            {
+                _coopPage.DebugOpenCoop(idx);
+                if (tab != 0) _coopPage.DebugTab(tab);
+            }
+
+            Invalidate(true);
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：按 Coop ID 打开好感弹层并切到指定页（tab 0 能力 / 1 礼物）。</summary>
+        public void DebugCoopDetail(int cid, int rank, int tab)
+        {
+            _page = PAGE_COOP;
+            _expanded = true;
+            Opacity = 1.0;
+            ApplyModeSize(false);
+            LayoutControls();
+            UpdateTabStyles();
+            Invalidate(true);
+            Application.DoEvents();
+
+            _coopPage.DebugOpenCoopId(cid, rank, tab);
 
             Invalidate(true);
             Application.DoEvents();
@@ -1844,6 +1866,9 @@ namespace P5ROverlay
 
         /// <summary>自检：把点击转给日历页，返回它的状态描述。</summary>
         public string DebugCalendarPress(string name) => _calPage.DebugPress(name);
+
+        /// <summary>自检：把点击转给好感弹层的「能力 / 礼物」页签。</summary>
+        public string DebugClickTab(string which) => _coopPage.DebugClickTab(which);
 
         /// <summary>自检：强制换一套配色并复位不透明度。</summary>
         public void DebugForceTheme(Color bg, Color text, Color accent)
