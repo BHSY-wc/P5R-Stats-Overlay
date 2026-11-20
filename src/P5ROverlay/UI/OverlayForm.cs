@@ -138,6 +138,7 @@ namespace P5ROverlay
 
             StartWorker();
             StartTopMostKeeper();
+            StartDateTicker();
         }
 
         private const int WS_EX_COMPOSITED = 0x02000000;
@@ -1356,6 +1357,36 @@ namespace P5ROverlay
             ApplyClickThroughStyle(true);
         }
 
+        // ================================================================== 日历心跳
+        /// <summary>
+        /// 日历专用心跳。不管「刷新频率」被设成 3s 还是 60s，都单独每 10 秒读一次游戏内日期：
+        /// 面板还停在前一天（或者根本没对上过）就直接带到游戏里的今天。
+        /// 只读 8 字节，成本可以忽略；不加锁是因为 ReadProcessMemory 本身线程安全。
+        /// </summary>
+        private const int DateTickMs = 10000;
+        private System.Windows.Forms.Timer _dateTick;
+
+        private void StartDateTicker()
+        {
+            _dateTick = new System.Windows.Forms.Timer { Interval = DateTickMs };
+            _dateTick.Tick += (s, e) => DateTick();
+            _dateTick.Start();
+        }
+
+        private void DateTick()
+        {
+            try
+            {
+                if (!_reader.TryReadGameDate(out int day, out int tz)) return;
+                if (_calPage.SyncToday(day, tz))
+                {
+                    var d = Snapshot.CalendarOrigin.AddDays(day);
+                    Log.W($"[日历] 已对齐游戏内 {d.Month} 月 {d.Day} 日（{(tz >= 0 ? Snapshot.TimeZoneText(tz) : "时段未知")}）");
+                }
+            }
+            catch (Exception ex) { Log.W("[日历] " + ex.Message); }
+        }
+
         // ================================================================== 置顶 / 托盘
         private System.Windows.Forms.Timer _keeper;
 
@@ -1461,6 +1492,7 @@ namespace P5ROverlay
         {
             _reallyExit = true;
             _stop = true;
+            try { if (_dateTick != null) { _dateTick.Stop(); _dateTick.Dispose(); _dateTick = null; } } catch { }
             try { SaveSettings(); } catch { }
             try { if (_tray != null) { _tray.Visible = false; _tray.Dispose(); } } catch { }
             try { _reader.Dispose(); } catch { }
@@ -1864,8 +1896,47 @@ namespace P5ROverlay
             Application.DoEvents();
         }
 
+        /// <summary>自检：停掉数据线程和日历心跳，避免它们把手喂进来的日期冲掉。</summary>
+        public void DebugStopWorker()
+        {
+            _stop = true;
+            try { if (_dateTick != null) _dateTick.Stop(); } catch { }
+            try { _worker?.Interrupt(); } catch { }
+            try { _worker?.Join(1500); } catch { }
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：改状态行文案（截图用，避免拍到「读档中」这类临时状态）。</summary>
+        public void DebugSetStatus(string text)
+        {
+            _status = text;
+            UpdateStatusLabel();
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：强制日历的「自动跟随」状态。</summary>
+        public void DebugSetFollow(bool on)
+        {
+            _calPage.DebugSetFollow(on);
+            Invalidate(true);
+            Update();
+        }
+
         /// <summary>自检：把点击转给日历页，返回它的状态描述。</summary>
         public string DebugCalendarPress(string name) => _calPage.DebugPress(name);
+
+        /// <summary>
+        /// 自检：手动跑一次 10 秒心跳 —— 直接喂游戏日期，不用真游戏。
+        /// 返回（有变化?）+ 日历状态，用来验证「日子变了会自动跳到新的一天」。
+        /// </summary>
+        public string DebugDateTick(int dayIdx, int tz)
+        {
+            bool moved = _calPage.SyncToday(dayIdx, tz);
+            Invalidate(true);
+            Update();
+            var d = Snapshot.CalendarOrigin.AddDays(dayIdx);
+            return $"{(moved ? "已对齐" : "无变化")} 游戏={d:MM-dd} tz={tz} | {_calPage.DebugState()}";
+        }
 
         /// <summary>自检：把点击转给好感弹层的「能力 / 礼物」页签。</summary>
         public string DebugClickTab(string which) => _coopPage.DebugClickTab(which);

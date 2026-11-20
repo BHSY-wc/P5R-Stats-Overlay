@@ -99,26 +99,62 @@ namespace P5ROverlay
 
         // ================================================================ 数据
         /// <summary>每次轮询喂进来；dayIdx &lt; 0 表示这一帧没读到。</summary>
-        public void SetGameDate(int dayIdx, int tz)
+        public void SetGameDate(int dayIdx, int tz) { SyncToday(dayIdx, tz); }
+
+        /// <summary>
+        /// 把日历对齐到游戏内「今天」。数据线程每次轮询、面板的 10 秒心跳都走这里。
+        /// 只有「今天」真的变了才动视图 —— 用户手动翻到别的日子时，不会被每 10 秒拽回来。
+        /// 返回 true 表示日期或视图有变化（用来决定要不要写日志）。
+        /// </summary>
+        public bool SyncToday(int dayIdx, int tz)
         {
-            if (dayIdx < 0) return;
+            if (dayIdx < 0) return false;
 
             var d = Snapshot.CalendarOrigin.AddDays(dayIdx);
             bool first = !_hasDate;
-            bool monthChanged = _hasDate && (d.Year != _today.Year || d.Month != _today.Month);
+            var old = _today;
+            bool dayChanged = _hasDate && d.Date != old.Date;
+            bool tzChanged = _tz != tz;
+            bool moved = false;
 
             _today = d;
             _tz = tz;
             _hasDate = true;
 
-            // 第一次拿到 / 游戏跨月且用户没手动翻过 → 把视图带过去
-            if (first || (_follow && monthChanged))
+            if (first)
             {
-                _year = d.Year;
-                _month = d.Month;
+                // 第一次拿到日期：直接带到今天
                 _follow = true;
+                SetMonth(d);
+                moved = true;
             }
-            Invalidate();
+            else if (dayChanged)
+            {
+                // 面板当时正停在「旧的今天」上（月视图停在今天那个月 / 日视图看着今天）→ 整页跟过去
+                bool wasOnToday = _view == View.Day
+                    ? _dayDate.Date == old.Date
+                    : (_year == old.Year && _month == old.Month);
+
+                if (_follow || wasOnToday)
+                {
+                    _follow = true;
+                    SetMonth(d);
+                    if (_view == View.Day) OpenDayPage(d);   // 内部会重算日程并重画
+                    moved = true;
+                }
+            }
+
+            if (moved || dayChanged || tzChanged) Invalidate();
+            return moved;
+        }
+
+        /// <summary>把月视图挪到某个月（超出 2016-04 ~ 2017-03 的范围就夹住）。</summary>
+        private void SetMonth(DateTime d)
+        {
+            if (d < First) d = First;
+            if (d > Last) d = Last;
+            _year = d.Year;
+            _month = d.Month;
         }
 
         private static DateTime First => new DateTime(2016, 4, 1);
@@ -140,6 +176,7 @@ namespace P5ROverlay
         private void ShowToday()
         {
             if (!_hasDate) return;
+            _follow = true;                 // 点「今」= 恢复自动跟随
             OpenDayPage(_today);
         }
 
@@ -194,6 +231,13 @@ namespace P5ROverlay
             Invalidate();
         }
 
+        /// <summary>自检：强制打开/关闭自动跟随（截图用，避免拍到「已暂停跟随」）。</summary>
+        public void DebugSetFollow(bool on)
+        {
+            _follow = on;
+            Invalidate();
+        }
+
         // ---- 自检：按名字点某个命中区，用来验证按钮几何与状态切换（不需要真鼠标）
         public string DebugPress(string name)
         {
@@ -240,6 +284,7 @@ namespace P5ROverlay
 
         public string DebugState() =>
             $"view={_view} ov={_ov} date={_dayDate:yyyy-MM-dd} month={_year}-{_month:00} " +
+            $"today={(_hasDate ? _today.ToString("yyyy-MM-dd") : "无")} tz={_tz} " +
             $"expand={_expand} follow={_follow} scroll={_dayScroll} cells={_cells.Count}";
 
         private void BuildDayItems()
@@ -555,7 +600,7 @@ namespace P5ROverlay
                 ? "现在：" + (tzn.Length > 0 ? tzn : "—")
                 : $"游戏内 {_today.Month} 月 {_today.Day} 日（{wd}）"
                   + (tzn.Length > 0 ? " · " + tzn : "")
-                  + (_follow ? "" : " · 已暂停跟随");
+                  + FollowHint();
 
             using (var f = P5R.F(10.5f, FontStyle.Bold))
                 TextRenderer.DrawText(g, s, f,
@@ -573,6 +618,12 @@ namespace P5ROverlay
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
             }
         }
+
+        /// <summary>
+        /// 「已暂停跟随」提示。手动翻走之后日历不再自己跳到今天，
+        /// 这里把怎么回去写出来 —— 前面已经有游戏内日期了，不用重复。
+        /// </summary>
+        private string FollowHint() => _follow ? "" : " · 已暂停跟随（点「今」回今天）";
 
         private void DrawWeekHeader(Graphics g, int y)
         {

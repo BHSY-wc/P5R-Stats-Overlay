@@ -321,6 +321,31 @@ namespace P5ROverlay
                    tag >= 0x0100 && tag <= 0x0110 && flag <= 1;
         }
 
+        /// <summary>
+        /// 只读一次游戏内日期，给日历的 10 秒心跳用。
+        /// 不定位、不改任何字段，可以在 UI 线程直接调用（ReadProcessMemory 本身是线程安全的）。
+        /// 读不到（没附加 / 日期块还没定位 / 内容不像日期块）返回 false。
+        /// </summary>
+        public bool TryReadGameDate(out int dayIdx, out int tz)
+        {
+            dayIdx = -1;
+            tz = -1;
+
+            long a = _dateAddr;                 // long 读是原子的，不用加锁
+            if (!Attached || a == 0) return false;
+
+            var db = ReadBytes(a, 8);
+            if (db == null) return false;
+
+            int d1 = BitConverter.ToUInt16(db, 0);
+            int d2 = BitConverter.ToUInt16(db, 4);
+            if (d1 != d2 || d1 < 1 || d1 > 400) return false;
+
+            dayIdx = d1;
+            tz = BitConverter.ToUInt16(db, 6);
+            return true;
+        }
+
         /// <summary>读一帧。读不到返回 null（游戏已退出）。</summary>
         public Snapshot Poll()
         {

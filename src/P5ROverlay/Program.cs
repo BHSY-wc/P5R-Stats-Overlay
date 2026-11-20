@@ -183,6 +183,26 @@ namespace P5ROverlay
             Step("月历再点「今」", "today");
             Step("日视图点「月历」", "back");
 
+            // 10 秒心跳：游戏里过日子 → 日历自己跟上（不点「今」也要跟）
+            sb.AppendLine();
+            sb.AppendLine("== 日历 10 秒心跳 ==");
+            f.DebugStopWorker();        // 否则数据线程会把手喂进来的日期冲掉
+            f.DebugDemoData();          // 回到确定的起点：2016-06-21（dayIdx 81）
+            Pump(200);
+            void Tick(string what, int day, int tz)
+            {
+                string r = f.DebugDateTick(day, tz);
+                sb.AppendLine($"{what,-22} -> {r}");
+                Pump(150);
+            }
+            Tick("心跳·同一天", 81, 5);              // 什么都不该变
+            Tick("心跳·次日(本月内)", 82, 5);        // 月视图跟到 06-22
+            Tick("心跳·跨月到 07-01", 91, 3);        // 月视图跟到 2016-07
+            Step("手动翻回上个月", "prev");           // follow 变 false
+            Tick("心跳·跨月(已暂停跟随)", 100, 5);   // 视图不动，只更新「今天」
+            Step("点「今」回今天", "today");          // 进入 07-10 的日视图，并恢复跟随
+            Tick("心跳·日视图+1 天", 101, 5);        // 日视图本身跟到 07-11
+
             // 好感弹层的「能力 / 礼物」页签：走真实命中判定
             sb.AppendLine();
             f.DebugCoopDetail(7, 6, 0);
@@ -228,8 +248,12 @@ namespace P5ROverlay
             }
 
             // 日历三种形态：月视图（格子自动换行）/ 日详情弹层 / 整页日视图
+            // 先停掉数据线程和 10 秒心跳：否则真游戏的日期/状态行会把手喂的日期和文案冲掉
+            f.DebugStopWorker();
             f.DebugSetup(2, true);
             f.DebugCalendar(0, 6, 21);
+            f.DebugSetFollow(true);            // DebugCalendar 会关掉跟随，截图要拍跟随态
+            f.DebugSetStatus("内存实时 · 每 5s · " + DateTime.Now.ToString("HH:mm:ss"));
             f.Location = new System.Drawing.Point(40, 40);
             Pump(700);
             f.ShotTo(Path.Combine(outDir, "3_日历_月.png"));
@@ -249,6 +273,15 @@ namespace P5ROverlay
             f.DebugCalendar(1, 6, 23);
             Pump(400);
             f.ShotTo(Path.Combine(outDir, "3e_日历_日视图_多条.png"));
+
+            // 手动翻走 + 游戏已经过日子：顶部要写清「已暂停跟随（游戏 6/21）」
+            f.DebugStopWorker();               // 游戏在跑时也要拍出确定画面
+            f.DebugSetup(2, true);
+            f.DebugCalendar(0, 6, 1);          // 先回到月视图
+            f.DebugDateTick(81, 5);            // 游戏内 2016-06-21
+            f.DebugCalendarPress("prev");      // 翻到 5 月 → 暂停跟随
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "3g_日历_暂停跟随.png"));
 
             // 攻略弹层：五维门槛（2 倍字）/ 好感能力表（1.5 倍字）
             f.DebugDetail(0, 3);
