@@ -319,6 +319,18 @@ namespace P5ROverlay
             Pump(500);
             f.ShotTo(Path.Combine(outDir, "2h_好感_礼物_最小宽度.png"));
 
+            // 恋爱线标记：武见妙（三个前置条件 + Rank 8 的确认项都看得到）
+            f.DebugCoopDetail(14, 8, 0);
+            f.Size = new System.Drawing.Size(600, 760);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "2i_好感_恋爱标记.png"));
+
+            // 恋爱线标记：大宅一子（三段式确认），拉高看 Rank 8 那条
+            f.DebugCoopDetail(16, 9, 0);
+            f.Size = new System.Drawing.Size(600, 760);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "2j_好感_恋爱标记_大宅一子.png"));
+
             // 选日浮层：看月份文字有没有被 ‹ › 按钮压住
             f.DebugSetup(2, true);
             f.DebugCalendar(3, 6, 21);

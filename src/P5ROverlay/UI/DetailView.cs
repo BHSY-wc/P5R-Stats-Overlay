@@ -102,6 +102,10 @@ namespace P5ROverlay
             public string Desc;
             public bool On;      // 已解锁
             public bool Story;   // 剧情触发（二觉 / 三觉），不看好感
+            public bool Love;    // 恋爱线的关键选项
+            public bool LoveMust;// 恋人确认项（选错就断在友人线）
+            public float NameH;  // 布局时算出的单行/多行名称高度
+            public float DescH;  // 布局时算出的描述高度
         }
 
         public bool IsOpen { get; private set; }
@@ -152,10 +156,14 @@ namespace P5ROverlay
         {
             _rows.Clear();
             var ab = GuideData.Coop(_coopId);
+            var tips = RomanceData.Get(_coopId);
+
+            // 能力和恋爱选项按 Rank 混排：翻到第 N 级时，那一级的「别选错」就在眼前
+            var merged = new List<Row>();
             foreach (var a in ab)
             {
                 bool story = a.Rank > 10;
-                _rows.Add(new Row
+                merged.Add(new Row
                 {
                     Lv = a.Rank,
                     Name = a.Name,
@@ -164,7 +172,36 @@ namespace P5ROverlay
                     Story = story,
                 });
             }
-            _empty = ab.Length == 0 ? "这个 Coop 没有战斗能力，随剧情推进" : "";
+            foreach (var t in tips)
+            {
+                merged.Add(new Row
+                {
+                    Lv = t.Rank,
+                    Name = t.Text,
+                    Desc = t.Note,
+                    On = t.Rank <= _cur,
+                    Love = true,
+                    LoveMust = t.Must,
+                });
+            }
+
+            // 稳定排序：同 Rank 时能力在前、恋爱提示在后
+            var order = new List<int>();
+            for (int i = 0; i < merged.Count; i++) order.Add(i);
+            order.Sort((i, j) =>
+            {
+                int c = merged[i].Lv.CompareTo(merged[j].Lv);
+                if (c != 0) return c;
+                return merged[i].Love.CompareTo(merged[j].Love);
+            });
+            foreach (var i in order) _rows.Add(merged[i]);
+
+            if (ab.Length == 0 && tips.Length == 0)
+                _empty = "这个 Coop 没有战斗能力，随剧情推进";
+            else if (ab.Length == 0)
+                _empty = "";
+            else
+                _empty = "";
         }
 
         /// <summary>礼物页：只列「好感 +50」那一档（普通 5 / 较好 10 / 高级 50）。</summary>
@@ -430,20 +467,27 @@ namespace P5ROverlay
             _h.Clear();
 
             using var fDesc = P5R.F(DescPx);
+            using var fName = P5R.F(NamePx, FontStyle.Bold);
             float wrapW = Math.Max(60f, w - TextX - 4f);
 
             float total = 8;
-            foreach (var r in _rows)
+            for (int i = 0; i < _rows.Count; i++)
             {
-                float h;
-                if (r.Desc.Length == 0) h = Math.Max(BadgeH + 10f * S, NameH + 8f * S);
-                else
+                var r = _rows[i];
+                // 名称允许折行：恋爱线的选项是好几个「」串起来的，比一行长
+                float nh = Math.Max(NameH, g.MeasureString(r.Name, fName, (int)wrapW).Height);
+                float dh = 0f;
+                if (r.Desc.Length > 0)
                 {
-                    // 不设 NoWrap：按可用宽度折行，长描述不裁切
-                    float dh = g.MeasureString(r.Desc, fDesc, (int)wrapW).Height;
+                    dh = g.MeasureString(r.Desc, fDesc, (int)wrapW).Height;
                     dh = Math.Max(DescPx * 1.4f, dh);
-                    h = NameH + dh + 8f * S;
                 }
+                r.NameH = nh;
+                r.DescH = dh;
+                _rows[i] = r;
+
+                float h = nh + (dh > 0 ? dh + 4f * S : 0f) + 8f * S;
+                h = Math.Max(h, BadgeH + 10f * S);
                 _h.Add(h);
                 total += h;
             }
@@ -458,23 +502,41 @@ namespace P5ROverlay
             // 左侧状态竖条
             var tick = new RectangleF(x, y + 5 * S, Math.Max(4f, 3f * S), Math.Max(6f, h - 10 * S));
             if (h > 18)
-                P5R.Slab(g, tick, r.Story ? Color.FromArgb(190, 226, 176, 64) : (on ? T.Accent : Color.FromArgb(80, P5R.Wire)));
+                P5R.Slab(g, tick,
+                    r.Love ? Color.FromArgb(r.LoveMust ? 235 : 170, 226, 84, 132)
+                           : r.Story ? Color.FromArgb(190, 226, 176, 64)
+                                     : (on ? T.Accent : Color.FromArgb(80, P5R.Wire)));
 
             // 等级徽章
             var badge = new RectangleF(x + 10, y + 4 * S, BadgeW, BadgeH);
             string bt = _statMode ? ("Lv" + r.Lv)
                       : (_tab == 1 ? "+50" : (r.Story ? "剧情" : "R" + r.Lv));
 
-            Color badgeFill, badgeText;
-            if (r.Story) { badgeFill = Color.FromArgb(226, 176, 64); badgeText = P5R.Ink; }
-            else if (on) { badgeFill = T.Accent; badgeText = P5R.Paper; }
-            else { badgeFill = Color.FromArgb(150, P5R.SlabLo); badgeText = Color.FromArgb(150, P5R.Ash); }
+            if (r.Love)
+            {
+                // 恋爱线：粉红徽章 + 手绘爱心（不依赖字体里有没有 ♥）
+                var loveBg = r.LoveMust
+                    ? Color.FromArgb(226, 66, 112)          // 确认项：深粉，选错就断
+                    : Color.FromArgb(244, 132, 168);        // 前置条件：浅粉
+                P5R.Slab(g, badge, loveBg, Color.FromArgb(60, P5R.Wire));
+                float hs = badge.Height * 0.66f;
+                DrawHeart(g, new RectangleF(
+                    badge.X + (badge.Width - hs) / 2f,
+                    badge.Y + (badge.Height - hs) / 2f, hs, hs), P5R.Paper);
+            }
+            else
+            {
+                Color badgeFill, badgeText;
+                if (r.Story) { badgeFill = Color.FromArgb(226, 176, 64); badgeText = P5R.Ink; }
+                else if (on) { badgeFill = T.Accent; badgeText = P5R.Paper; }
+                else { badgeFill = Color.FromArgb(150, P5R.SlabLo); badgeText = Color.FromArgb(150, P5R.Ash); }
 
-            P5R.Slab(g, badge, badgeFill, Color.FromArgb(60, P5R.Wire));
-            using (var f = P5R.F(Math.Min(10.5f * S, badge.Height * 0.62f), FontStyle.Bold))
-                TextRenderer.DrawText(g, bt, f, Rectangle.Round(badge), badgeText,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
-                    TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                P5R.Slab(g, badge, badgeFill, Color.FromArgb(60, P5R.Wire));
+                using (var f = P5R.F(Math.Min(10.5f * S, badge.Height * 0.62f), FontStyle.Bold))
+                    TextRenderer.DrawText(g, bt, f, Rectangle.Round(badge), badgeText,
+                        TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+                        TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+            }
 
             float tx = x + TextX;
             float tw = Math.Max(40f, x + w - tx - 4);
@@ -483,19 +545,21 @@ namespace P5ROverlay
             // 名称
             Color nameColor = on ? T.Text : Theme.Blend(T.Text, T.Bg, 0.66);
             if (r.Story) nameColor = Theme.Blend(T.Text, P5R.Ink, 0.35);
+            if (r.Love) nameColor = Color.FromArgb(r.LoveMust ? 214 : 198, 62, 108);
 
             using (var f = P5R.F(NamePx, FontStyle.Bold))
                 TextRenderer.DrawText(g, r.Name, f,
-                    new Rectangle((int)tx, (int)nameTop, (int)tw, (int)NameH), nameColor,
-                    TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
-                    TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                    new Rectangle((int)tx, (int)nameTop, (int)tw, (int)(r.NameH > 0 ? r.NameH : NameH)), nameColor,
+                    TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak |
+                    TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
             // 描述
             if (r.Desc.Length > 0)
             {
                 Color dc = on ? Theme.Blend(T.Text, T.Bg, 0.22) : Theme.Blend(T.Text, T.Bg, 0.68);
                 using var f = P5R.F(DescPx);
-                var box = new RectangleF(tx, nameTop + NameH, tw, Math.Max(DescPx, h - NameH - 8f * S));
+                float boxH = r.DescH > 0 ? r.DescH : Math.Max(DescPx, h - NameH - 8f * S);
+                var box = new RectangleF(tx, nameTop + (r.NameH > 0 ? r.NameH : NameH), tw, boxH);
                 using var sf = new StringFormat(StringFormat.GenericTypographic)
                 {
                     Alignment = StringAlignment.Near,
@@ -505,6 +569,28 @@ namespace P5ROverlay
                 using var br = new SolidBrush(dc);
                 g.DrawString(r.Desc, f, br, box, sf);
             }
+        }
+
+        /// <summary>
+        /// 手绘爱心。用参数方程铺多边形，避免依赖字体里有没有 U+2665：
+        /// x = 16sin³t，y = 13cos t − 5cos2t − 2cos3t − cos4t。
+        /// </summary>
+        private static void DrawHeart(Graphics g, RectangleF r, Color c)
+        {
+            const int N = 48;
+            var pts = new PointF[N];
+            for (int i = 0; i < N; i++)
+            {
+                double t = System.Math.PI * 2 * i / N;
+                double x = 16 * System.Math.Pow(System.Math.Sin(t), 3);
+                double y = -(13 * System.Math.Cos(t) - 5 * System.Math.Cos(2 * t)
+                             - 2 * System.Math.Cos(3 * t) - System.Math.Cos(4 * t));
+                pts[i] = new PointF(
+                    r.X + (float)((x + 16) / 32) * r.Width,
+                    r.Y + (float)((y + 17) / 29) * r.Height);
+            }
+            using var br = new SolidBrush(c);
+            g.FillPolygon(br, pts);
         }
 
         private void DrawScroll(Graphics g, Theme T)
