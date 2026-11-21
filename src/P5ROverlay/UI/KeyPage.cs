@@ -15,6 +15,7 @@ namespace P5ROverlay
         private readonly Dictionary<int, int> _ranks = new Dictionary<int, int>();
         private readonly short[] _stats = new short[5];
         private int _scroll;
+        private int _navSel = -1;                 // 小键盘光标：跨分组的扁平条目下标
 
         private struct Hit { public RectangleF Rect; public int Cid, Rank; public string Name, Arcana; }
         private readonly List<Hit> _hit = new List<Hit>();
@@ -109,6 +110,8 @@ namespace P5ROverlay
             foreach (var h in _hit)
             {
                 if (!h.Rect.Contains(e.Location)) continue;
+                int flat = FlatOfCid(h.Cid);
+                if (flat >= 0) _navSel = flat;
                 Detail.OpenCoop(h.Cid, h.Name, h.Arcana, h.Rank);
                 Focus();
                 Invalidate();
@@ -122,6 +125,103 @@ namespace P5ROverlay
         {
             _scroll = Math.Max(0, Math.Min(MaxScroll, y));
             Invalidate(); Update();
+        }
+
+        // ------------------------------------------------------------ 小键盘导航
+        private static int FlatCount
+        {
+            get
+            {
+                int n = 0;
+                foreach (var g in KeyData.Groups) n += g.Items.Length;
+                return n;
+            }
+        }
+
+        private static KeyData.Item ItemAt(int flat)
+        {
+            int k = 0;
+            foreach (var g in KeyData.Groups)
+                foreach (var it in g.Items)
+                {
+                    if (k == flat) return it;
+                    k++;
+                }
+            return null;
+        }
+
+        private static int TopOf(int flat)
+        {
+            int y = HintH + 8, k = 0;
+            foreach (var g in KeyData.Groups)
+            {
+                y += GroupH;
+                foreach (var it in g.Items)
+                {
+                    if (k == flat) return y;
+                    y += RowH; k++;
+                }
+            }
+            return y;
+        }
+
+        private static int FlatOfCid(int cid)
+        {
+            int k = 0;
+            foreach (var g in KeyData.Groups)
+                foreach (var it in g.Items)
+                {
+                    if (it.Cid == cid && it.NeedRank > 0) return k;
+                    k++;
+                }
+            return -1;
+        }
+
+        private void EnsureVisible(int flat)
+        {
+            int top = TopOf(flat);
+            int viewTop = HintH + 4, viewBot = Height - 6;
+            int screenTop = top - _scroll;
+            if (screenTop < viewTop) _scroll = Math.Max(0, top - viewTop);
+            else if (screenTop + RowH > viewBot) _scroll = Math.Min(MaxScroll, top + RowH - viewBot);
+        }
+
+        public override bool NavMove(int dx, int dy)
+        {
+            if (Detail.IsOpen || dy == 0) return false;
+            int n = FlatCount;
+            if (n == 0) return false;
+
+            int j = _navSel < 0 ? (dy > 0 ? 0 : n - 1) : _navSel + dy;
+            j = Math.Max(0, Math.Min(n - 1, j));
+            if (j == _navSel) return true;      // 已经在头/尾：吃掉，不重画
+
+            _navSel = j;
+            EnsureVisible(j);
+            Invalidate();
+            return true;
+        }
+
+        public override bool NavConfirm()
+        {
+            if (Detail.IsOpen || _navSel < 0) return false;
+            var it = ItemAt(_navSel);
+            // 书 / 设施 / 汉堡挑战都没有能力表，按 7 就当没按
+            if (it == null || it.Cid <= 0 || it.NeedRank <= 0) return false;
+
+            string nm = GameTables.Coops.TryGetValue(it.Cid, out var info) ? info.Name : it.Source;
+            string arc = GameTables.Coops.TryGetValue(it.Cid, out var info2) ? info2.Arcana : "";
+            Detail.OpenCoop(it.Cid, nm, arc, Rank(it.Cid));
+            Invalidate();
+            return true;
+        }
+
+        public override bool NavBack()
+        {
+            if (!Detail.IsOpen) return false;
+            Detail.Close();
+            Invalidate();
+            return true;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -142,6 +242,9 @@ namespace P5ROverlay
             g.SetClip(new Rectangle(0, HintH, Width, Math.Max(0, Height - HintH)));
 
             int y = HintH + 8 - _scroll;
+            int flat = 0;
+            var focusRect = RectangleF.Empty;
+
             foreach (var grp in KeyData.Groups)
             {
                 if (y + GroupH > HintH && y < Height) DrawGroup(g, grp, padX, y, w);
@@ -149,10 +252,18 @@ namespace P5ROverlay
 
                 foreach (var it in grp.Items)
                 {
-                    if (y + RowH > HintH && y < Height) DrawItem(g, grp, it, padX, y, w);
+                    if (y + RowH > HintH && y < Height)
+                    {
+                        DrawItem(g, grp, it, padX, y, w);
+                        if (flat == _navSel)
+                            focusRect = new RectangleF(padX + 6, y + 3, w - 12, RowH - 8);
+                    }
                     y += RowH;
+                    flat++;
                 }
             }
+
+            if (!Detail.IsOpen && focusRect.Width > 0) DrawNavFocus(g, focusRect);
             g.Restore(st);
 
             // 提示条最后画，永远悬在列表之上

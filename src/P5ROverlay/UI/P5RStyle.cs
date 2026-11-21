@@ -111,6 +111,40 @@ namespace P5ROverlay
             if (edge.HasValue) Stroke(g, p, edge.Value, 1f);
         }
 
+        /// <summary>
+        /// 键盘选中框：斜切描边 + 左上角实心三角，用来标出「小键盘正在选哪一项」。
+        /// 只画框不动底色，叠在任何行上都看得清。
+        /// </summary>
+        public static void FocusFrame(Graphics g, RectangleF r, Color c, float lean = Lean, bool arrow = true)
+        {
+            var outer = RectangleF.Inflate(r, 2.5f, 2.5f);
+            using (var p = Skew(outer, lean))
+                Stroke(g, p, c, 2f);
+
+            // 四角短杠：压住斜边转角，避免细线在斜切处发虚
+            const float w = 9f, h = 3f;
+            var corners = new[]
+            {
+                new RectangleF(outer.X + 2, outer.Y - 1, w, h),
+                new RectangleF(outer.Right - w - 2, outer.Y - 1, w, h),
+                new RectangleF(outer.X + 2, outer.Bottom - h + 1, w, h),
+                new RectangleF(outer.Right - w - 2, outer.Bottom - h + 1, w, h),
+            };
+            foreach (var cr in corners) Fill(g, Skew(cr, lean), c);
+
+            // 左侧实心三角（指示「就是这一行」）；小方块按钮不画，否则会顶到窗口边
+            if (!arrow) return;
+            float cy = outer.Y + outer.Height * 0.5f;
+            var tri = new[]
+            {
+                new PointF(outer.X - 8, cy - 5f),
+                new PointF(outer.X - 8, cy + 5f),
+                new PointF(outer.X - 2, cy),
+            };
+            using var tb = new SolidBrush(c);
+            g.FillPolygon(tb, tri);
+        }
+
         /// <summary>胶囊（P5R 右上角的白色数量标签）。</summary>
         public static void Pill(Graphics g, RectangleF r, Color fill, string text, Color ink, Font f)
         {

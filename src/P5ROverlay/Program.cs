@@ -65,6 +65,13 @@ namespace P5ROverlay
                 return;
             }
 
+            // 小键盘导航自检：不依赖真实按键，直接调 Nav 接口，逐页截光标/弹层
+            if (args.Any(a => a.Equals("--navshot", StringComparison.OrdinalIgnoreCase)))
+            {
+                RunNavShots(AppContext.BaseDirectory);
+                return;
+            }
+
             if (args.Any(a => a.Equals("--grab", StringComparison.OrdinalIgnoreCase)))
             {
                 RunGrab(AppContext.BaseDirectory);
@@ -223,6 +230,96 @@ namespace P5ROverlay
         }
 
         /// <summary>自检截图：把四个页面各拍一张，存到 exe 同目录 shots\。</summary>
+        /// <summary>
+        /// 小键盘导航自检：不模拟真实按键，直接调 Nav 接口，逐页截「光标 / 弹层 / 浮层」。
+        /// 键位：0 上 / 1 下 / 2 左 / 3 右 / 4 确认 / 5 返回。
+        /// </summary>
+        private static void RunNavShots(string dir)
+        {
+            string outDir = Path.Combine(dir, "shots_nav");
+            try { Directory.CreateDirectory(outDir); } catch { }
+
+            var f = new OverlayForm();
+            f.Location = new System.Drawing.Point(40, 40);
+            f.Show();
+            Pump(2000);
+            if (!f.HasData) { f.DebugDemoData(); Pump(300); }
+
+            void Nav(params int[] keys)
+            {
+                foreach (int k in keys) f.DebugNav(k);
+                Pump(260);
+            }
+            void Shot(string name) => f.ShotTo(Path.Combine(outDir, name + ".png"));
+
+            // ---- 五维：光标 → 确认 → 弹层里按左应无反应
+            f.DebugSetup(0, true);
+            Nav(1, 1);
+            Shot("N1_五维_光标");
+            Nav(4);
+            Shot("N2_五维_详情");
+            Nav(2);
+            Shot("N3_五维_详情_按左无反应");
+            Nav(5);
+
+            // ---- 好感：光标 → 能力表 → 右键切礼物页
+            f.DebugSetup(1, true);
+            Nav(1, 1, 1);
+            Shot("N4_好感_光标");
+            Nav(4);
+            Shot("N5_好感_能力表");
+            Nav(3);
+            Shot("N6_好感_礼物页");
+            Nav(5);
+
+            // ---- 关键：光标 → 能力表
+            f.DebugSetup(2, true);
+            Nav(1, 1);
+            Shot("N7_关键_光标");
+            Nav(4);
+            Shot("N8_关键_能力表");
+            Nav(5);
+
+            // 滑到最后的汉堡组：这几行没有能力表，按确认应当毫无反应
+            for (int i = 0; i < 30; i++) f.DebugNav(1);
+            Pump(200);
+            Shot("N8b_关键_汉堡行");
+            Nav(4);
+            Shot("N8c_关键_汉堡行按确认无反应");
+
+            // ---- 日历：按钮行 → 网格 → 日详情 → 选月浮层
+            f.DebugStopWorker();
+            f.DebugSetup(3, true);
+            f.DebugCalendar(0, 6, 21);
+            f.DebugSetFollow(true);
+            f.DebugSetStatus("内存实时 · 每 5s · " + DateTime.Now.ToString("HH:mm:ss"));
+            Pump(500);
+            Shot("N9_日历_按钮行");
+
+            Nav(3, 3, 3);        // 右右右 → 光标停在「今」
+            Shot("N10_日历_选中今");
+            Nav(1);              // 下 → 进日期网格
+            Nav(3, 3, 1);        // 右右下 → 6/30
+            Shot("N11_日历_选中日期");
+            Nav(4);              // 确认 → 日详情
+            Shot("N12_日历_日详情");
+
+            Nav(5);              // 关日详情
+            Nav(0, 0, 0, 0, 0);  // 一路往上，第一行再按上回按钮行
+            Nav(2, 2);           // 光标移到年月标题
+            Nav(4);              // 打开选月浮层
+            Nav(3, 1);           // 右、下
+            Shot("N13_日历_选月浮层");
+            Nav(5);
+
+            f.DebugSetup(0, true);
+            Pump(400);
+            Shot("N14_收尾");
+
+            f.DebugStopWorker();
+            f.Close();
+        }
+
         private static void RunShot(string dir)
         {
             string outDir = Path.Combine(dir, "shots");

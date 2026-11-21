@@ -85,6 +85,22 @@ namespace P5ROverlay
         // ---- 热键
         private const int HK_TOGGLE = 1, HK_EXPAND = 2, HK_PREV = 3, HK_NEXT = 4, HK_PASS = 5, HK_REFRESH = 6;
 
+        // ---- 小键盘导航（面板展开且可交互时才注册，收起后立刻还给游戏）
+        private const int HK_NAV_UP = 11, HK_NAV_DOWN = 12, HK_NAV_LEFT = 13,
+                          HK_NAV_RIGHT = 14, HK_NAV_OK = 15, HK_NAV_BACK = 16;
+
+        private sealed class NavKey
+        {
+            public int Id;
+            public string IniKey = "", Caption = "";
+            public uint Vk;
+            public string Text = "";
+            public bool Ok = true;
+        }
+
+        private readonly List<NavKey> _navKeys = new List<NavKey>();
+        private bool _navRegistered;
+
         private sealed class HotkeySlot
         {
             public int Id;
@@ -406,7 +422,8 @@ namespace P5ROverlay
             {
                 Text = "改动立即生效，并自动保存到 p5r_overlay.ini。\r\n" +
                        "窗口透明度 100% 最清晰；调低会透出游戏画面，文字发虚。\r\n" +
-                       "点键位改键（Esc 取消）；「鼠标交互」关掉后鼠标穿透到游戏里。",
+                       "点键位改键（Esc 取消）；「鼠标交互」关掉后鼠标穿透到游戏里。\r\n" +
+                       "小键盘 8/5/4/6 选择 · 7 确认 · 9 关闭（仅展开且可交互时接管）。",
                 AutoSize = false,
                 BackColor = Color.Transparent,
                 Font = new Font("Microsoft YaHei UI", 9f),
@@ -796,8 +813,8 @@ namespace P5ROverlay
             _pvLine2.SetBounds(10, 26, Math.Max(80, w - 40), 22);
             y += 58;
 
-            _tipLabel.SetBounds(4, y, Math.Max(120, w - 16), 62);
-            y += 66;
+            _tipLabel.SetBounds(4, y, Math.Max(120, w - 16), 84);
+            y += 88;
 
             _verLabel.SetBounds(4, y, Math.Max(80, w - 130), 22);
             _byLabel.SetBounds(w - 136, y, 128, 22);
@@ -962,6 +979,7 @@ namespace P5ROverlay
                 Invalidate();
             }
             finally { _applyingMode = false; }
+            SyncNavHotkeys();
             SaveSettings();
         }
 
@@ -1028,13 +1046,14 @@ namespace P5ROverlay
             AddSlot(new HotkeySlot
             {
                 Id = HK_PREV, Caption = "上一页", IniKey = "HotkeyPrev",
-                DefMods = 0, DefVk = 0x68, DefText = "Num8",
+                // 原来是小键盘 8，那个键已经让给「上选」，切页挪到 PgUp/PgDn
+                DefMods = 0, DefVk = 0x21, DefText = "PgUp",
                 OnFire = () => NextPage(-1)
             });
             AddSlot(new HotkeySlot
             {
                 Id = HK_NEXT, Caption = "下一页", IniKey = "HotkeyNext",
-                DefMods = 0, DefVk = 0x62, DefText = "Num2",
+                DefMods = 0, DefVk = 0x22, DefText = "PgDn",
                 OnFire = () => NextPage(1)
             });
             AddSlot(new HotkeySlot
@@ -1050,6 +1069,25 @@ namespace P5ROverlay
                 OnFire = () => { KickWorker(); }
             });
             _passSlot = _slotById[HK_PASS];
+            BuildNavKeys();
+        }
+
+        /// <summary>
+        /// 小键盘导航键：只在「面板展开 + 可交互」时注册，收起 / 穿透 / 进托盘立刻注销，
+        /// 这样游戏里的小键盘按键不会被面板一直占着。
+        /// </summary>
+        private void BuildNavKeys()
+        {
+            _navKeys.Clear();
+            void Add(int id, string ini, string cap, uint vk, string text)
+                => _navKeys.Add(new NavKey { Id = id, IniKey = ini, Caption = cap, Vk = vk, Text = text });
+
+            Add(HK_NAV_UP, "NavUp", "上选", 0x68, "Num8");
+            Add(HK_NAV_DOWN, "NavDown", "下选", 0x65, "Num5");
+            Add(HK_NAV_LEFT, "NavLeft", "左选", 0x64, "Num4");
+            Add(HK_NAV_RIGHT, "NavRight", "右选", 0x66, "Num6");
+            Add(HK_NAV_OK, "NavOk", "确认", 0x67, "Num7");
+            Add(HK_NAV_BACK, "NavBack", "关闭/返回", 0x69, "Num9");
         }
 
         private void AddSlot(HotkeySlot s)
@@ -1070,7 +1108,65 @@ namespace P5ROverlay
         protected override void OnHandleDestroyed(EventArgs e)
         {
             foreach (var s in _slots) try { Win32.UnregisterHotKey(Handle, s.Id); } catch { }
+            foreach (var k in _navKeys) try { Win32.UnregisterHotKey(Handle, k.Id); } catch { }
             base.OnHandleDestroyed(e);
+        }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            SyncNavHotkeys();
+        }
+
+        /// <summary>导航键的注册状态跟着「展开 + 可见 + 可交互」走，条件不满足就注销。</summary>
+        private void SyncNavHotkeys()
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+
+            bool want = Visible && _expanded && !_clickThrough && _captureSlot == null;
+            if (want == _navRegistered) return;
+
+            foreach (var k in _navKeys)
+            {
+                try { Win32.UnregisterHotKey(Handle, k.Id); } catch { }
+                if (!want) continue;
+
+                try { k.Ok = Win32.RegisterHotKey(Handle, k.Id, Win32.MOD_NOREPEAT, k.Vk); }
+                catch { k.Ok = false; }
+                if (!k.Ok) Log.W($"[nav] {k.Caption} 的 {k.Text} 注册失败（可能被其它程序占用）");
+            }
+            _navRegistered = want;
+            Log.W($"[nav] 小键盘导航{(want ? "已接管 8/5/4/6/7/9" : "已释放，小键盘还给游戏")}");
+        }
+
+        private PageBase CurrentPage()
+        {
+            switch (_page)
+            {
+                case PAGE_STAT: return _statPage;
+                case PAGE_COOP: return _coopPage;
+                case PAGE_KEY: return _keyPage;
+                case PAGE_CAL: return _calPage;
+            }
+            return null;
+        }
+
+        /// <summary>小键盘导航分发：8/5 上下、4/6 左右、7 确认、9 关闭。</summary>
+        private void DispatchNav(int id)
+        {
+            var page = CurrentPage();
+            if (page == null) return;      // 日志 / 设置页没有可导航的东西
+
+            switch (id)
+            {
+                case HK_NAV_UP: page.NavVertical(-1); break;
+                case HK_NAV_DOWN: page.NavVertical(1); break;
+                case HK_NAV_LEFT: page.NavSide(-1); break;
+                case HK_NAV_RIGHT: page.NavSide(1); break;
+                case HK_NAV_OK: page.NavConfirm(); break;
+                case HK_NAV_BACK: page.NavBack(); break;
+            }
+            page.Invalidate();
         }
 
         private void RegisterAllHotkeys()
@@ -1123,6 +1219,7 @@ namespace P5ROverlay
             _captureSlot = s;
             // 捕获期间摘掉全局热键，否则按 F9 会被自己抢走
             foreach (var o in _slots) try { Win32.UnregisterHotKey(Handle, o.Id); } catch { }
+            SyncNavHotkeys();     // 导航键也一起摘掉，否则按小键盘会被导航吃掉
             s.Btn.Text = "按新键…";
             s.Btn.ForeColor = _theme.Accent;
         }
@@ -1134,6 +1231,7 @@ namespace P5ROverlay
             _captureSlot = null;
             s.Btn.Text = s.Text;
             RegisterAllHotkeys();
+            SyncNavHotkeys();
             StyleSettingsControls();
             if (!string.IsNullOrEmpty(msg)) Log.W(msg);
         }
@@ -1175,10 +1273,24 @@ namespace P5ROverlay
         {
             if (m.Msg == Win32.WM_HOTKEY)
             {
-                if (_slotById.TryGetValue(m.WParam.ToInt32(), out var slot))
+                int id = m.WParam.ToInt32();
+
+                if (_slotById.TryGetValue(id, out var slot))
                 {
                     try { slot.OnFire?.Invoke(); }
                     catch (Exception ex) { Log.W($"[hk] {slot.Caption} 执行异常: {ex.Message}"); }
+                    return;
+                }
+
+                if (_navRegistered)
+                {
+                    foreach (var k in _navKeys)
+                    {
+                        if (k.Id != id) continue;
+                        try { DispatchNav(id); }
+                        catch (Exception ex) { Log.W($"[nav] {k.Caption} 执行异常: {ex.Message}"); }
+                        return;
+                    }
                 }
                 return;
             }
@@ -1341,6 +1453,7 @@ namespace P5ROverlay
             if (_btnMouseMode != null)
                 _btnMouseMode.Text = on ? "已穿透" : "可交互";
             Log.W("鼠标交互 = " + (!on) + "（穿透=" + on + "）");
+            SyncNavHotkeys();
             if (persist) SaveSettings();
         }
 
@@ -1470,6 +1583,7 @@ namespace P5ROverlay
             if (_clickThrough) SetClickThrough(false, true);
             TopMost = true;
             ReassertTopMost();
+            SyncNavHotkeys();
             try { Win32.SetForegroundWindow(Handle); } catch { }
         }
 
@@ -1477,6 +1591,7 @@ namespace P5ROverlay
         {
             Hide();
             ShowInTaskbar = false;
+            SyncNavHotkeys();
             Log.W("面板已收进托盘（F9 或托盘右键可唤回）");
         }
 
@@ -1773,6 +1888,14 @@ namespace P5ROverlay
                                 {
                                     slot.Mods = hm; slot.Vk = hv; slot.Text = ht;
                                 }
+                                else
+                                {
+                                    var nk = _navKeys.FirstOrDefault(k => k.IniKey == key);
+                                    if (nk != null && ParseHotkey(val, out uint nm, out uint nv, out string nt))
+                                    {
+                                        nk.Vk = nv; nk.Text = nt;
+                                    }
+                                }
                                 break;
                         }
                     }
@@ -1782,6 +1905,14 @@ namespace P5ROverlay
 
             _refreshSec = refresh;
             _expanded = exp;
+
+            // 老版本的「上一页 / 下一页」默认是小键盘 8 / 2，这两个键现在归导航用；
+            // 老 ini 里存着的旧默认值就地迁到 PgUp / PgDn，否则会和导航键抢注册。
+            if (_slotById.TryGetValue(HK_PREV, out var prevSlot) && prevSlot.Mods == 0 && prevSlot.Vk == 0x68)
+            { prevSlot.Vk = 0x21; prevSlot.Text = "PgUp"; }
+            if (_slotById.TryGetValue(HK_NEXT, out var nextSlot) && nextSlot.Mods == 0 && nextSlot.Vk == 0x62)
+            { nextSlot.Vk = 0x22; nextSlot.Text = "PgDn"; }
+
             _compactSize = new Size(Math.Max(MinCompact.Width, _compactSize.Width), Math.Max(MinCompact.Height, _compactSize.Height));
             _expandSize = new Size(Math.Max(MinExpand.Width, _expandSize.Width), Math.Max(MinExpand.Height, _expandSize.Height));
 
@@ -1812,6 +1943,7 @@ namespace P5ROverlay
                 sb.AppendLine("ClickThrough=" + _clickThrough);
                 sb.AppendLine("RefreshSec=" + _refreshSec);
                 foreach (var s in _slots) sb.AppendLine(s.IniKey + "=" + s.Text);
+                foreach (var k in _navKeys) sb.AppendLine(k.IniKey + "=" + k.Text);
                 File.WriteAllText(SettingsPath, sb.ToString());
             }
             catch { }
@@ -1833,6 +1965,33 @@ namespace P5ROverlay
 
         /// <summary>自检：当前是否已经读到真实数据。</summary>
         public bool HasData => _snap != null && _snap.Stats != null && _snap.Stats.Any(v => v > 0);
+
+        /// <summary>自检：模拟一次小键盘导航。0 上 / 1 下 / 2 左 / 3 右 / 4 确认 / 5 返回。</summary>
+        public void DebugNav(int key)
+        {
+            var page = CurrentPage();
+            if (page == null) return;
+
+            switch (key)
+            {
+                case 0: page.NavVertical(-1); break;
+                case 1: page.NavVertical(1); break;
+                case 2: page.NavSide(-1); break;
+                case 3: page.NavSide(1); break;
+                case 4: page.NavConfirm(); break;
+                case 5: page.NavBack(); break;
+            }
+            page.Invalidate();
+            page.Update();
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：当前页有没有东西处在「可确认」状态（只用于断言日志）。</summary>
+        public string DebugNavState()
+        {
+            var page = CurrentPage();
+            return page == null ? "无页面" : (page.GetType().Name + " 可交互");
+        }
 
         /// <summary>自检：没有游戏在跑时灌一份演示数据，用来检查排版。</summary>
         public void DebugDemoData()

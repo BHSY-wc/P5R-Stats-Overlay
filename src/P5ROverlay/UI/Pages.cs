@@ -128,6 +128,42 @@ namespace P5ROverlay
             if (Detail.IsOpen) Detail.Paint(g, ClientRectangle, T);
         }
 
+        // ------------------------------------------------------------ 小键盘导航
+        // 8/5 上下、4/6 左右（dx/dy 各给 ±1），7 确认，9 返回。
+        // 返回 true 表示这一下被页面消费掉了（OverlayForm 不看返回值，但便于自检断言）。
+        /// <summary>方向移动。dy: -1 上 / +1 下；dx: -1 左 / +1 右。</summary>
+        public virtual bool NavMove(int dx, int dy) => false;
+
+        /// <summary>确认键（小键盘 7）。</summary>
+        public virtual bool NavConfirm() => false;
+
+        /// <summary>返回 / 关闭键（小键盘 9）；没有可关的东西就返回 false，什么都不做。</summary>
+        public virtual bool NavBack() => false;
+
+        /// <summary>切到本页时重置光标（默认什么都不动）。</summary>
+        public virtual void NavReset() { }
+
+        /// <summary>小键盘 8/5：弹层开着就滚弹层内容，否则交给页面上下选。</summary>
+        public bool NavVertical(int dy)
+        {
+            if (Detail.IsOpen) return Detail.ScrollBy(dy);
+            return NavMove(0, dy);
+        }
+
+        /// <summary>小键盘 4/6：弹层开着就切「能力 / 礼物」页，否则交给页面横向移动。</summary>
+        public bool NavSide(int dir)
+        {
+            if (Detail.IsOpen) return Detail.NextTab(dir);
+            return NavMove(dir, 0);
+        }
+
+        /// <summary>画选中框；r 为稳定命中矩形（不要传带入场动画位移的矩形）。</summary>
+        protected void DrawNavFocus(Graphics g, RectangleF r)
+        {
+            if (r.Width < 8 || r.Height < 8) return;
+            P5R.FocusFrame(g, r, T.Accent);
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing) _anim.Dispose();
@@ -235,6 +271,7 @@ namespace P5ROverlay
         private readonly short[] _stats = new short[5];
         private bool _hasPrev;
         private readonly RectangleF[] _rowHit = new RectangleF[5];   // 按内存下标存，供点击命中
+        private int _navSel = -1;                                    // 小键盘光标（显示序 0~4）
 
         /// <summary>五维页字号整体放大倍数（原始尺寸 × 1.3 后取整，见 <see cref="FS"/>）。</summary>
         private const float FontScale = 1.3f;
@@ -294,7 +331,55 @@ namespace P5ROverlay
                 DrawStatRow(g, i, padX, startY + d * rowH, fullW, rowH - 6);
             }
 
+            // 小键盘光标单独一轮画，免得被后面的行盖住
+            if (!Detail.IsOpen && _navSel >= 0 && _navSel < 5)
+            {
+                int i = MemIdx(_navSel);
+                DrawNavFocus(g, _rowHit[i]);
+            }
+
             PaintDetail(g);
+        }
+
+        // ------------------------------------------------------------ 小键盘导航
+        private static int MemIdx(int d)
+        {
+            var order = GameTables.StatDisplayOrder;
+            return (order != null && d >= 0 && d < order.Length) ? order[d] : d;
+        }
+
+        private int DispIdx(int mem)
+        {
+            var order = GameTables.StatDisplayOrder;
+            if (order == null) return mem;
+            for (int d = 0; d < order.Length; d++) if (order[d] == mem) return d;
+            return mem;
+        }
+
+        public override bool NavMove(int dx, int dy)
+        {
+            if (Detail.IsOpen || dy == 0) return false;
+            if (_navSel < 0) _navSel = dy > 0 ? 0 : 4;
+            else _navSel = Math.Max(0, Math.Min(4, _navSel + dy));
+            Invalidate();
+            return true;
+        }
+
+        public override bool NavConfirm()
+        {
+            if (Detail.IsOpen || _navSel < 0) return false;
+            int i = MemIdx(_navSel);
+            Detail.OpenStat(i, GameTables.StatLevel(i, _stats[i]), _stats[i]);
+            Invalidate();
+            return true;
+        }
+
+        public override bool NavBack()
+        {
+            if (!Detail.IsOpen) return false;
+            Detail.Close();
+            Invalidate();
+            return true;
         }
 
         protected override bool HitRow(Point p)
@@ -312,6 +397,7 @@ namespace P5ROverlay
             {
                 if (_rowHit[i].Width <= 0 || !_rowHit[i].Contains(e.Location)) continue;
                 int pts = _stats[i];
+                _navSel = DispIdx(i);
                 Detail.OpenStat(i, GameTables.StatLevel(i, pts), pts);
                 Focus();          // 拿到焦点，滚轮才会送到这个 Panel 而不是窗口
                 Invalidate();
@@ -462,6 +548,7 @@ namespace P5ROverlay
     {
         private readonly List<CoopRow> _rows = new List<CoopRow>();
         private int _scroll;
+        private int _navSel = -1;                 // 小键盘光标：_rows 的下标（跳过分组标题）
 
         private struct Hit { public RectangleF Rect; public int Id, Rank; public string Name, Arcana; }
         private readonly List<Hit> _hit = new List<Hit>();   // 每帧重建，只含当前可见的行
@@ -564,6 +651,69 @@ namespace P5ROverlay
             Invalidate(); Update();
         }
 
+        // ------------------------------------------------------------ 小键盘导航
+        private int RowTopOf(int index)
+        {
+            int y = HintH + 8;
+            for (int k = 0; k < index && k < _rows.Count; k++)
+                y += _rows[k].IsHeader ? HeaderH : RowH;
+            return y;
+        }
+
+        private void EnsureVisible(int index)
+        {
+            if (index < 0 || index >= _rows.Count) return;
+            int top = RowTopOf(index);
+            int h = _rows[index].IsHeader ? HeaderH : RowH;
+            int viewTop = HintH + 4, viewBot = Height - 6;
+            int screenTop = top - _scroll;
+            if (screenTop < viewTop) _scroll = Math.Max(0, top - viewTop);
+            else if (screenTop + h > viewBot) _scroll = Math.Min(MaxScroll, top + h - viewBot);
+        }
+
+        public override bool NavMove(int dx, int dy)
+        {
+            if (Detail.IsOpen || dy == 0 || _rows.Count == 0) return false;
+
+            int n = _rows.Count;
+            int j = _navSel;
+            if (j < 0 || j >= n) j = dy > 0 ? -1 : n;
+
+            // 跳过分组标题，最多走一整轮
+            for (int k = 0; k <= n; k++)
+            {
+                j += dy;
+                if (j < 0) { j = 0; break; }
+                if (j >= n) { j = n - 1; break; }
+                if (!_rows[j].IsHeader) break;
+            }
+            while (j >= 0 && j < n && _rows[j].IsHeader) j += dy > 0 ? 1 : -1;
+            if (j < 0 || j >= n || _rows[j].IsHeader) return false;
+
+            _navSel = j;
+            EnsureVisible(j);
+            Invalidate();
+            return true;
+        }
+
+        public override bool NavConfirm()
+        {
+            if (Detail.IsOpen || _navSel < 0 || _navSel >= _rows.Count) return false;
+            var r = _rows[_navSel];
+            if (r.IsHeader) return false;
+            Detail.OpenCoop(r.Id, r.Name, r.Arcana, r.Rank);
+            Invalidate();
+            return true;
+        }
+
+        public override bool NavBack()
+        {
+            if (!Detail.IsOpen) return false;
+            Detail.Close();
+            Invalidate();
+            return true;
+        }
+
         protected override void OnMouseDown(MouseEventArgs e)
         {
             if (Detail.IsOpen) { base.OnMouseDown(e); Invalidate(); return; }
@@ -571,6 +721,7 @@ namespace P5ROverlay
             foreach (var h in _hit)
             {
                 if (!h.Rect.Contains(e.Location)) continue;
+                _navSel = _rows.FindIndex(r => !r.IsHeader && r.Id == h.Id);
                 Detail.OpenCoop(h.Id, h.Name, h.Arcana, h.Rank);
                 Focus();
                 Invalidate();
@@ -602,9 +753,11 @@ namespace P5ROverlay
 
             int padX = 12;
             int y = HintH + 8 - _scroll;
+            var focusRect = RectangleF.Empty;
 
-            foreach (var r in _rows)
+            for (int ri = 0; ri < _rows.Count; ri++)
             {
+                var r = _rows[ri];
                 if (r.IsHeader)
                 {
                     if (y + HeaderH > HintH && y < Height)
@@ -614,9 +767,15 @@ namespace P5ROverlay
                 }
 
                 if (y + RowH > HintH && y < Height)
+                {
                     DrawRow(g, r, padX, y, Width - padX * 2);
+                    if (ri == _navSel)
+                        focusRect = new RectangleF(padX + 6, y + 2, Width - padX * 2 - 12, RowH - 6);
+                }
                 y += RowH;
             }
+
+            if (!Detail.IsOpen && focusRect.Width > 0) DrawNavFocus(g, focusRect);
 
             // 滚动条（P5R 那种白色竖条）
             if (MaxScroll > 0)

@@ -282,6 +282,25 @@ namespace P5ROverlay
             ClampScroll();
         }
 
+        /// <summary>小键盘 4/6：在「能力 / 礼物」两页之间切；五维弹层没有页签，返回 false。</summary>
+        public bool NextTab(int dir)
+        {
+            if (!IsOpen || _statMode) return false;
+            int t = _tab + dir;
+            if (t < 0 || t > 1) return false;
+            SetTab(t);
+            return true;
+        }
+
+        /// <summary>小键盘 8/5：弹层内容上下滚；dy 为 -1 上 / +1 下。</summary>
+        public bool ScrollBy(int dy)
+        {
+            if (!IsOpen || dy == 0) return false;
+            _scroll += dy * 46;
+            ClampScroll();
+            return true;
+        }
+
         /// <summary>自检：按坐标模拟点击页签，走真实命中判定（顺带验证不会误触关闭）。</summary>
         public string DebugClickTab(string which)
         {

@@ -91,6 +91,11 @@ namespace P5ROverlay
 
         private static readonly string[] WeekCn = { "日", "一", "二", "三", "四", "五", "六" };
 
+        // ---- 小键盘导航：0 = 顶部按钮行（‹ 标题 › 今 − ＋），1 = 日期网格
+        private int _navZone;
+        private int _navBtn;
+        private DateTime _navDate = new DateTime(2016, 4, 1);
+
         public CalendarPage()
         {
             SetStyle(ControlStyles.Selectable, true);
@@ -384,6 +389,165 @@ namespace P5ROverlay
             Invalidate();
         }
 
+        // ================================================================ 小键盘导航
+        private int NavBtnCount => _view == View.Day ? 5 : 6;
+
+        private void EnsureNavDate()
+        {
+            if (_navDate.Year == _year && _navDate.Month == _month) return;
+            if (_hasDate && _today.Year == _year && _today.Month == _month) { _navDate = _today.Date; return; }
+            _navDate = new DateTime(_year, _month, 1);
+        }
+
+        private void PickMonthAt(int i)
+        {
+            if (i < 0 || i > 11) return;
+            int m = i + 4 <= 12 ? i + 4 : i - 8;
+            _year = m >= 4 ? 2016 : 2017;
+            _month = m;
+            _follow = false;
+            _ov = Ov.None;
+            EnsureNavDate();
+        }
+
+        /// <summary>顶部按钮行第 n 个按钮（月视图 0‹ 1标题 2› 3今 4− 5＋；日视图 0‹ 1标题 2› 3今 4返回）。</summary>
+        private void FireNavBtn(int n)
+        {
+            if (_view == View.Day)
+            {
+                switch (n)
+                {
+                    case 0: ShiftDay(-1); break;
+                    case 1: OpenDayPick(); break;
+                    case 2: ShiftDay(1); break;
+                    case 3: ShowToday(); break;
+                    case 4: BackToMonth(); break;
+                }
+                return;
+            }
+            switch (n)
+            {
+                case 0: Shift(-1); break;
+                case 1: OpenPicker(); break;
+                case 2: Shift(1); break;
+                case 3: ShowToday(); break;
+                case 4: SetExpand(false); break;
+                case 5: SetExpand(true); break;
+            }
+        }
+
+        public override bool NavMove(int dx, int dy)
+        {
+            if (dx == 0 && dy == 0) return false;
+
+            // ---- 浮层优先
+            if (_ov == Ov.MonthPick)
+            {
+                if (_pickHover < 0) _pickHover = 0;
+                else if (dx != 0) _pickHover = Math.Max(0, Math.Min(11, _pickHover + dx));
+                else
+                {
+                    int t = _pickHover + dy * 4;          // 4 列 3 行
+                    if (t >= 0 && t <= 11) _pickHover = t;
+                }
+                Invalidate();
+                return true;
+            }
+            if (_ov == Ov.DayPick)
+            {
+                if (_dpHover < 0) _dpHover = FirstPickDay();
+                else
+                {
+                    int step = dx != 0 ? dx : dy * 7;
+                    int t = _dpHover + step;
+                    // 跳过空格（上/下月不属于本月的日），最多走一格
+                    if (t >= 0 && t < 42 && _dpDayNums[t] > 0) _dpHover = t;
+                }
+                Invalidate();
+                return true;
+            }
+            if (_ov == Ov.DayPopup)
+            {
+                if (dy == 0) return false;
+                _ovScroll += dy * 46;
+                ClampOv();
+                Invalidate();
+                return true;
+            }
+
+            // ---- 日视图：只有按钮行
+            if (_view == View.Day)
+            {
+                if (dy != 0)
+                {
+                    if (dy > 0) _dayScroll = (int)Math.Min(DayScrollMax(), _dayScroll + 60);
+                    else _dayScroll = (int)Math.Max(0, _dayScroll - 60);
+                }
+                else _navBtn = Math.Max(0, Math.Min(NavBtnCount - 1, _navBtn + dx));
+                Invalidate();
+                return true;
+            }
+
+            // ---- 月视图网格
+            if (_navZone == 1)
+            {
+                EnsureNavDate();
+                if (dy != 0)
+                {
+                    // 第一行再往上 → 回按钮行
+                    if (dy < 0 && _navDate.Day <= 7) { _navZone = 0; Invalidate(); return true; }
+                    var nd = _navDate.AddDays(dy * 7);
+                    if (nd.Month == _month && nd.Year == _year) _navDate = nd;
+                }
+                else
+                {
+                    var nd = _navDate.AddDays(dx);
+                    if (nd.Month == _month && nd.Year == _year) _navDate = nd;
+                }
+                Invalidate();
+                return true;
+            }
+
+            // ---- 月视图按钮行
+            if (dy > 0) { _navZone = 1; EnsureNavDate(); Invalidate(); return true; }
+            if (dy < 0) return false;
+            _navBtn = Math.Max(0, Math.Min(NavBtnCount - 1, _navBtn + dx));
+            Invalidate();
+            return true;
+        }
+
+        private int FirstPickDay()
+        {
+            for (int i = 0; i < 42; i++) if (_dpDayNums[i] > 0) return i;
+            return 0;
+        }
+
+        public override bool NavConfirm()
+        {
+            if (_ov == Ov.MonthPick) { PickMonthAt(_pickHover < 0 ? 0 : _pickHover); Invalidate(); return true; }
+            if (_ov == Ov.DayPick)
+            {
+                int i = _dpHover < 0 ? FirstPickDay() : _dpHover;
+                if (_dpDayNums[i] > 0) OpenDayPage(new DateTime(_dpYear, _dpMonth, _dpDayNums[i]));
+                return true;
+            }
+            if (_ov == Ov.DayPopup) { _ov = Ov.None; Invalidate(); return true; }
+
+            if (_view == View.Day) { FireNavBtn(_navBtn); return true; }
+
+            if (_navZone == 1) { EnsureNavDate(); OpenDay(_navDate); return true; }
+            FireNavBtn(_navBtn);
+            return true;
+        }
+
+        public override bool NavBack()
+        {
+            if (_ov != Ov.None) { _ov = Ov.None; Invalidate(); return true; }
+            if (_view == View.Day) { BackToMonth(); return true; }
+            if (_navZone == 1) { _navZone = 0; Invalidate(); return true; }
+            return false;
+        }
+
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             if (_ov == Ov.DayPopup)
@@ -543,6 +707,38 @@ namespace P5ROverlay
             int gridTop = BarH + infoH;
             DrawWeekHeader(g, gridTop);
             DrawGrid(g, gridTop + WeekH, Height - gridTop - WeekH - 6);
+            DrawNavCursor(g);
+        }
+
+        private RectangleF NavBtnRect(int n)
+        {
+            if (_view == View.Day)
+                return n == 0 ? _btnPrev : n == 1 ? _btnTitle : n == 2 ? _btnNext
+                     : n == 3 ? _btnToday : n == 4 ? _btnBack : RectangleF.Empty;
+
+            return n == 0 ? _btnPrev : n == 1 ? _btnTitle : n == 2 ? _btnNext
+                 : n == 3 ? _btnToday : n == 4 ? _btnMinus : n == 5 ? _btnPlus : RectangleF.Empty;
+        }
+
+        /// <summary>小键盘光标：按钮行高亮按钮，网格高亮选中的那一天。浮层打开时不画。</summary>
+        private void DrawNavCursor(Graphics g)
+        {
+            if (_ov != Ov.None) return;
+
+            if (_view == View.Day || _navZone == 0)
+            {
+                var r = NavBtnRect(_navBtn);
+                if (r.Width > 0) P5R.FocusFrame(g, RectangleF.Inflate(r, -2f, -2f), T.Accent, arrow: false);
+                return;
+            }
+
+            EnsureNavDate();
+            foreach (var c in _cells)
+                if (c.D.Date == _navDate.Date)
+                {
+                    P5R.FocusFrame(g, RectangleF.Inflate(c.R, -1f, -1f), T.Accent, arrow: false);
+                    return;
+                }
         }
 
         private void LayoutBar(Graphics g)
@@ -855,6 +1051,7 @@ namespace P5ROverlay
             if (_hasDate) DrawInfoLine(g, BarH, "滚轮切日 · 点日期选日");
 
             PaintDayBody(g, BarH + (_hasDate ? InfoH : 0) + 2);
+            DrawNavCursor(g);
         }
 
         private void EnsureDayLayout(Graphics g)
@@ -1186,6 +1383,9 @@ namespace P5ROverlay
                     cur ? Color.FromArgb(240, 230, 232) : Theme.Blend(T.Text, T.Bg, 0.60),
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.NoPadding);
             }
+
+            if (_pickHover >= 0 && _pickHover < 12 && _pickRects[_pickHover].Width > 0)
+                P5R.FocusFrame(g, RectangleF.Inflate(_pickRects[_pickHover], -2f, -2f), P5R.Paper, arrow: false);
         }
 
         // ================================================================ 日选择（日视图）
@@ -1295,6 +1495,9 @@ namespace P5ROverlay
                         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                         TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
             }
+
+            if (_dpHover >= 0 && _dpHover < 42 && _dpDayRects[_dpHover].Width > 0)
+                P5R.FocusFrame(g, RectangleF.Inflate(_dpDayRects[_dpHover], -1f, -1f), P5R.Paper, arrow: false);
         }
 
         private void DrawPickNav(Graphics g, RectangleF r, string text, bool enabled)
