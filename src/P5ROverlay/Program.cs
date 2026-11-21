@@ -40,7 +40,7 @@ namespace P5ROverlay
                 d.Show();
                 Pump(1500);
                 if (!d.HasData) { d.DebugDemoData(); Pump(200); }
-                d.DebugSetup(2, true);
+                d.DebugSetup(3, true);
                 Application.Run(d);
                 return;
             }
@@ -157,7 +157,7 @@ namespace P5ROverlay
             f.Show();
             Pump(1200);
             if (!f.HasData) { f.DebugDemoData(); Pump(300); }
-            f.DebugSetup(2, true);
+            f.DebugSetup(3, true);
             Pump(500);
 
             void Step(string what, string key)
@@ -238,7 +238,7 @@ namespace P5ROverlay
                 Pump(300);
             }
 
-            var pages = new[] { (0, "1_五维"), (1, "2_好感"), (3, "4_日志"), (4, "5_设置") };
+            var pages = new[] { (0, "1_五维"), (1, "2_好感"), (2, "3_关键"), (4, "4_日志"), (5, "5_设置") };
             foreach (var (page, name) in pages)
             {
                 f.DebugSetup(page, true);
@@ -250,7 +250,7 @@ namespace P5ROverlay
             // 日历三种形态：月视图（格子自动换行）/ 日详情弹层 / 整页日视图
             // 先停掉数据线程和 10 秒心跳：否则真游戏的日期/状态行会把手喂的日期和文案冲掉
             f.DebugStopWorker();
-            f.DebugSetup(2, true);
+            f.DebugSetup(3, true);
             f.DebugCalendar(0, 6, 21);
             f.DebugSetFollow(true);            // DebugCalendar 会关掉跟随，截图要拍跟随态
             f.DebugSetStatus("内存实时 · 每 5s · " + DateTime.Now.ToString("HH:mm:ss"));
@@ -276,7 +276,7 @@ namespace P5ROverlay
 
             // 手动翻走 + 游戏已经过日子：顶部要写清「已暂停跟随（游戏 6/21）」
             f.DebugStopWorker();               // 游戏在跑时也要拍出确定画面
-            f.DebugSetup(2, true);
+            f.DebugSetup(3, true);
             f.DebugCalendar(0, 6, 1);          // 先回到月视图
             f.DebugDateTick(81, 5);            // 游戏内 2016-06-21
             f.DebugCalendarPress("prev");      // 翻到 5 月 → 暂停跟随
@@ -331,8 +331,22 @@ namespace P5ROverlay
             Pump(500);
             f.ShotTo(Path.Combine(outDir, "2j_好感_恋爱标记_大宅一子.png"));
 
-            // 选日浮层：看月份文字有没有被 ‹ › 按钮压住
+            // 关键页：滚到下半部分看分组切换
             f.DebugSetup(2, true);
+            f.DebugKeyScroll(520);
+            f.Location = new System.Drawing.Point(40, 40);
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "3a_关键_滚动.png"));
+
+            // 关键页：最小宽度下标题 / 截止标签 / R 徽章会不会打架
+            f.DebugSetup(2, true);
+            f.DebugKeyScroll(0);
+            f.Size = new System.Drawing.Size(432, 520);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "3b_关键_最小宽度.png"));
+
+            // 选日浮层：看月份文字有没有被 ‹ › 按钮压住
+            f.DebugSetup(3, true);
             f.DebugCalendar(3, 6, 21);
             f.Location = new System.Drawing.Point(40, 40);
             Pump(500);
@@ -359,7 +373,7 @@ namespace P5ROverlay
             f.DebugForceTheme(System.Drawing.Color.FromArgb(18, 22, 28),
                               System.Drawing.Color.FromArgb(226, 233, 242),
                               System.Drawing.Color.FromArgb(240, 196, 96));
-            f.DebugSetup(3, true);                 // 设置页文字最多，最能看出是否发虚
+            f.DebugSetup(4, true);                 // 设置页文字最多，最能看出是否发虚
             f.Location = new System.Drawing.Point(40, 40);
             Pump(900);
 
