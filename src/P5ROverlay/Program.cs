@@ -344,6 +344,12 @@ namespace P5ROverlay
                 f.ShotTo(Path.Combine(outDir, name + ".png"));
             }
 
+            // 设置页拉高：快捷键 + 小键盘导航两块要一起入镜，别被折叠在滚动条下面
+            f.DebugSetup(5, true);
+            f.Size = new System.Drawing.Size(600, 800);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "5b_设置_快捷键.png"));
+
             // 日历三种形态：月视图（格子自动换行）/ 日详情弹层 / 整页日视图
             // 先停掉数据线程和 10 秒心跳：否则真游戏的日期/状态行会把手喂的日期和文案冲掉
             f.DebugStopWorker();
