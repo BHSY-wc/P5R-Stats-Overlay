@@ -14,8 +14,8 @@
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <DebugType>none</DebugType>
-    <Version>1.4.1</Version>
-    <FileVersion>1.4.1.0</FileVersion>
+    <Version>1.5.0</Version>
+    <FileVersion>1.5.0.0</FileVersion>
     <AssemblyTitle>P5R 五维人物好感面板</AssemblyTitle>
     <Product>冰寒石英制作</Product>
     <!-- exe 的 Win32 图标（资源管理器 / 任务栏 / 快捷方式都取这个） -->

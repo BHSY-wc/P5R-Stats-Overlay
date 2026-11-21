@@ -839,6 +839,23 @@ namespace P5ROverlay
             y += 32;
         }
 
+        /// <summary>量字宽（和 P5R.Chip 用的 GDI 排版一致，去掉左右 padding）。</summary>
+        private static float MeasureText(string s, Font f)
+            => TextRenderer.MeasureText(s, f, Size.Empty,
+                   TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
+
+        private string _clockStamp = "";
+
+        /// <summary>标题旁的时钟：秒变了才重画顶部那一条，不整窗重绘。</summary>
+        private void TickClock()
+        {
+            string now = DateTime.Now.ToString("HH:mm:ss");
+            if (now == _clockStamp) return;
+            _clockStamp = now;
+            if (!Visible || IsDisposed) return;
+            Invalidate(new Rectangle(0, 0, Width, _expanded ? TITLE_H + 6 : Height));
+        }
+
         private void ApplyRoundRegion()
         {
             if (Width <= 0 || Height <= 0) return;
@@ -893,9 +910,29 @@ namespace P5ROverlay
             }
 
             // ---- 标题：白色斜切牌（P5R 的 ACCESSORY 牌）。收起态牌面铺满整条。
-            float titleW = Math.Min(Math.Max(120, Width - 104), 252);
+            //      标题右边挂一枚同字号的小钟牌，收起 / 展开都跟着走。
+            using var fTitle = P5R.F(_expanded ? 13.5f : 15f, FontStyle.Bold);
+            const string Title = "五维人物好感面板";
+            const float PadL = 15f, PadR = 9f, Gap = 7f, ChipPadX = 7f;
+
+            float textW = MeasureText(Title, fTitle);
+            string clock = DateTime.Now.ToString("HH:mm:ss");
+            float chipW = MeasureText(clock, fTitle) + ChipPadX * 2;
+
+            // 展开态牌面最宽 268；收起态顶到窗口按钮前面（按钮吃 54，留 16 的呼吸）
+            float capW = _expanded ? 268f : Math.Max(120f, Width - 70f);
+            float need = PadL + textW + Gap + chipW + PadR;
+            if (need > capW)
+            {
+                clock = DateTime.Now.ToString("HH:mm");      // 先砍秒
+                chipW = MeasureText(clock, fTitle) + ChipPadX * 2;
+                need = PadL + textW + Gap + chipW + PadR;
+            }
+            bool withClock = need <= capW;
+            float plateW = Math.Min(capW, Math.Max(PadL + textW + PadR, need));
+
             float plateH = _expanded ? (TITLE_H - 5) : Math.Max(28, Height - 7);
-            var plate = new RectangleF(6, 2, titleW, plateH);
+            var plate = new RectangleF(6, 2, plateW, plateH);
             using (var p = P5R.Skew(plate, -9f))
             {
                 P5R.Fill(g, p, P5R.Paper);
@@ -903,10 +940,19 @@ namespace P5ROverlay
             P5R.Slab(g, new RectangleF(plate.X + 7, plate.Y + 6, 4, plate.Height - 12), _cAccent, null, -9f);
 
             // 牌上的黑字自己画：Label 用 GDI ClearType，白底上会出彩色描边
-            using (var f = P5R.F(_expanded ? 13.5f : 15f, FontStyle.Bold))
-                P5R.Text(g, "五维人物好感面板", f,
-                    new RectangleF(plate.X + 18, plate.Y, plate.Width - 24, plate.Height),
-                    P5R.Ink, StringAlignment.Near, StringAlignment.Center, -0.10f, false);
+            P5R.Text(g, Title, fTitle,
+                new RectangleF(plate.X + PadL, plate.Y, textW + 3, plate.Height),
+                P5R.Ink, StringAlignment.Near, StringAlignment.Center, -0.10f, false);
+
+            // 时钟：金底黑字的斜切小牌，字号与标题完全一致
+            if (withClock)
+            {
+                float chipH = Math.Min(_expanded ? 19f : 21f, plate.Height - 8);
+                var chip = new RectangleF(plate.X + PadL + textW + Gap,
+                                          plate.Y + (plate.Height - chipH) * 0.5f,
+                                          chipW, chipH);
+                P5R.Chip(g, chip, _cAccent, Color.FromArgb(95, P5R.Ink), clock, P5R.On(_cAccent), fTitle, -8f);
+            }
 
             // ---- 顶部标签：斜切块
             if (_expanded)
@@ -1543,7 +1589,7 @@ namespace P5ROverlay
         private void StartTopMostKeeper()
         {
             _keeper = new System.Windows.Forms.Timer { Interval = 1000 };
-            _keeper.Tick += (s, e) => { ReassertTopMost(); EnsureClickThroughStyle(); };
+            _keeper.Tick += (s, e) => { ReassertTopMost(); EnsureClickThroughStyle(); TickClock(); };
             _keeper.Start();
         }
 
