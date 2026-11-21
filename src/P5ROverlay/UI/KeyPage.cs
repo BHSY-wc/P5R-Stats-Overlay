@@ -13,6 +13,7 @@ namespace P5ROverlay
     public sealed class KeyPage : PageBase
     {
         private readonly Dictionary<int, int> _ranks = new Dictionary<int, int>();
+        private readonly short[] _stats = new short[5];
         private int _scroll;
 
         private struct Hit { public RectangleF Rect; public int Cid, Rank; public string Name, Arcana; }
@@ -49,6 +50,31 @@ namespace P5ROverlay
         }
 
         private int Rank(int cid) => _ranks.TryGetValue(cid, out int r) ? r : 0;
+
+        /// <summary>五维点数变化时刷新汉堡挑战的达成状态；点数没变就不重画。</summary>
+        public void SetStats(short[] stats)
+        {
+            if (stats == null || stats.Length < 5) return;
+
+            bool same = true;
+            for (int i = 0; i < 5; i++)
+                if (_stats[i] != stats[i]) { same = false; break; }
+            if (same) return;
+
+            for (int i = 0; i < 5; i++) _stats[i] = stats[i];
+            Invalidate();
+        }
+
+        private int StatLv(int i) => GameTables.StatLevel(i, _stats[i]);
+
+        /// <summary>五维条件是否全部达到（StatNeed 里 0 表示该项不要求）。</summary>
+        private bool StatOk(KeyData.Item it)
+        {
+            if (it.StatNeed == null) return false;
+            for (int i = 0; i < 5 && i < it.StatNeed.Length; i++)
+                if (it.StatNeed[i] > 0 && StatLv(i) < it.StatNeed[i]) return false;
+            return true;
+        }
 
         private int ContentHeight
         {
@@ -130,7 +156,7 @@ namespace P5ROverlay
             g.Restore(st);
 
             // 提示条最后画，永远悬在列表之上
-            DrawNoteHint(g, "★ 硬截止　✓ 已达成　R 现级/需求", "点一行看能力表");
+            DrawNoteHint(g, "★ 硬截止　✓ 已达成　徽章＝现级/需求", "点能力行看表");
 
             if (MaxScroll > 0)
             {
@@ -177,8 +203,9 @@ namespace P5ROverlay
         private void DrawItem(Graphics g, KeyData.Group grp, KeyData.Item it, int x, int y, int w)
         {
             bool hasCoop = it.Cid > 0 && it.NeedRank > 0;
+            bool hasStat = it.StatNeed != null;
             int cur = hasCoop ? Rank(it.Cid) : -1;
-            bool done = hasCoop && cur >= it.NeedRank;
+            bool done = hasCoop ? cur >= it.NeedRank : (hasStat && StatOk(it));
             bool near = hasCoop && !done && cur > 0 && it.NeedRank - cur <= 2;
 
             var block = new RectangleF(x + 6, y + 3, w - 12, RowH - 8);
@@ -235,8 +262,8 @@ namespace P5ROverlay
                          StringAlignment.Near, StringAlignment.Center, -0.10f, !done);
             }
 
-            // ---- 第二行：来源 + 描述（左），Rank 徽章（右）
-            float badgeW = hasCoop ? 78f : 0f;
+            // ---- 第二行：来源 + 描述（左），Rank / 五维徽章（右）
+            float badgeW = hasCoop ? 78f : (hasStat ? StatBadgeWidth(it) : 0f);
             float descRight = block.Right - 10 - (badgeW > 0 ? badgeW + 8 : 0);
 
             string sub = string.IsNullOrEmpty(it.Source) ? it.Desc : it.Source + " · " + it.Desc;
@@ -259,6 +286,46 @@ namespace P5ROverlay
                 var chip = new RectangleF(block.Right - badgeW - 10, block.Y + 30, badgeW, 18);
                 using (var f = P5R.F(10.5f, FontStyle.Bold))
                     P5R.Chip(g, chip, fill, Color.FromArgb(96, P5R.Ink), txt, ink, f);
+            }
+            else if (hasStat)
+            {
+                DrawStatChips(g, it, block.Right - 10, block.Y + 30);
+            }
+        }
+
+        /// <summary>五维徽章区宽度：勇 / 知 / 灵 三枚，每枚 44px、间距 5px。</summary>
+        private static float StatBadgeWidth(KeyData.Item it)
+        {
+            int n = 0;
+            foreach (int idx in StatShow) if (it.StatNeed[idx] > 0) n++;
+            return n <= 0 ? 0f : n * StatChipW + (n - 1) * StatGap;
+        }
+
+        // 汉堡挑战只看勇气 / 知识 / 灵巧，按这个顺序排（体贴、魅力通常不要求）
+        private static readonly int[] StatShow = { 3, 0, 2, 4, 1 };
+        private const float StatChipW = 44f, StatGap = 5f;
+
+        private void DrawStatChips(Graphics g, KeyData.Item it, float right, float top)
+        {
+            float x = right - StatBadgeWidth(it);
+            using var f = P5R.F(9.5f, FontStyle.Bold);
+
+            foreach (int idx in StatShow)
+            {
+                int need = it.StatNeed[idx];
+                if (need <= 0) continue;
+
+                int lv = StatLv(idx);
+                bool ok = lv >= need;
+                bool almost = !ok && need - lv == 1;
+
+                Color fill = ok ? Color.FromArgb(150, 240, 184)
+                                : (almost ? Color.FromArgb(236, 190, 86) : Color.FromArgb(206, P5R.Slate));
+                Color ink = ok || almost ? P5R.Ink : Theme.Blend(T.Text, T.Bg, 0.24);
+
+                string txt = GameTables.StatNames[idx].Substring(0, 1) + lv + "/" + need;
+                P5R.Chip(g, new RectangleF(x, top, StatChipW, 18), fill, Color.FromArgb(96, P5R.Ink), txt, ink, f);
+                x += StatChipW + StatGap;
             }
         }
     }

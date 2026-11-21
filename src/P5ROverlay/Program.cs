@@ -338,12 +338,26 @@ namespace P5ROverlay
             Pump(400);
             f.ShotTo(Path.Combine(outDir, "3a_关键_滚动.png"));
 
+            // 关键页：滚到底看「挑战 · 汉堡」组的五维徽章
+            f.DebugSetup(2, true);
+            f.DebugKeyScroll(int.MaxValue);
+            f.Location = new System.Drawing.Point(40, 40);
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "3h_关键_汉堡.png"));
+
             // 关键页：最小宽度下标题 / 截止标签 / R 徽章会不会打架
             f.DebugSetup(2, true);
             f.DebugKeyScroll(0);
             f.Size = new System.Drawing.Size(432, 520);
             Pump(500);
             f.ShotTo(Path.Combine(outDir, "3b_关键_最小宽度.png"));
+
+            // 关键页：最小宽度 + 滚到底，看三枚五维徽章会不会吃掉描述
+            f.DebugSetup(2, true);
+            f.Size = new System.Drawing.Size(432, 520);
+            f.DebugKeyScroll(int.MaxValue);
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "3i_关键_汉堡_最小宽度.png"));
 
             // 选日浮层：看月份文字有没有被 ‹ › 按钮压住
             f.DebugSetup(3, true);

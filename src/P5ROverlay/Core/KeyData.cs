@@ -18,6 +18,7 @@ namespace P5ROverlay
             public string Desc = "";   // 一句话作用
             public string Deadline = ""; // 「11/17」这种硬日期；空 = 没有截止
             public bool Hard;          // 错过就整条线没了
+            public int[] StatNeed;     // 五维条件（与 GameTables.StatNames 同序：知识/魅力/灵巧/勇气/体贴），0 = 不要求
         }
 
         public sealed class Group
@@ -35,11 +36,25 @@ namespace P5ROverlay
                 Desc = desc, Deadline = deadline, Hard = hard,
             };
 
+        /// <summary>五维条件条目（汉堡挑战）：达成与否按当前五维等级实时判定。</summary>
+        private static Item S(int[] need, string title, string source, string desc,
+                              string deadline = "", bool hard = false)
+            => new Item
+            {
+                StatNeed = need, Title = title, Source = source,
+                Desc = desc, Deadline = deadline, Hard = hard,
+            };
+
+        /// <summary>按 GameTables.StatNames 顺序填五维需求：知识 / 魅力 / 灵巧 / 勇气 / 体贴。</summary>
+        private static int[] Need(int know, int charm, int prof, int guts, int kind)
+            => new[] { know, charm, prof, guts, kind };
+
         public static readonly Color TintStory = Color.FromArgb(255, 64, 96);
         public static readonly Color TintBattle = Color.FromArgb(168, 132, 255);
         public static readonly Color TintTime = Color.FromArgb(86, 206, 214);
         public static readonly Color TintTalk = Color.FromArgb(236, 190, 86);
         public static readonly Color TintStat = Color.FromArgb(150, 240, 184);
+        public static readonly Color TintBurger = Color.FromArgb(255, 138, 76);
 
         public static readonly Group[] Groups =
         {
@@ -100,6 +115,21 @@ namespace P5ROverlay
                     I(0, 0, "《震撼灵魂的观影技巧》", "新宿书店 · 看过一次电影后", "看 DVD / 电影额外 +1♪。", "", false),
                     I(0, 0, "《游戏秘技宝典》", "新宿书店 · 玩过一次游戏后", "游戏难度下降，通关更快，通关还能去秋叶原换饰品。", "", false),
                     I(0, 0, "DVD 播放机 + 怀旧游戏", "四轩茶屋二手店 / 杂货店", "买齐才会开启「在家看 DVD」「玩游戏」两条五维来源。", "", false),
+                },
+            },
+            new Group
+            {
+                Name = "挑战 · 汉堡（5/6 起）", Tint = TintBurger,
+                Items = new[]
+                {
+                    S(Need(2, 0, 2, 2, 0), "彗星汉堡", "大爆炸汉堡 · 夜 500",
+                      "♪1×4 · 二等徽章 HP+10% · 汉堡×3", "", false),
+                    S(Need(3, 0, 3, 3, 0), "重力汉堡", "大爆炸汉堡 · 夜 500",
+                      "♪2×4 · 一等徽章 HP+20% · 汉堡×5", "", false),
+                    S(Need(4, 0, 4, 4, 0), "宇宙巨塔堡", "大爆炸汉堡 · 夜 500",
+                      "♪3×4 · 船长徽章 HP+30% · 汉堡×10", "", false),
+                    S(Need(4, 0, 4, 4, 0), "宇宙巨塔堡 · 再战", "大爆炸汉堡 · 夜 500",
+                      "只再给勇气♪3 · 汉堡×10，其余不涨", "", false),
                 },
             },
         };

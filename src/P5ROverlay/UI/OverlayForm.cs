@@ -1618,6 +1618,7 @@ namespace P5ROverlay
             _statPage.SetData(s.Stats);
             _coopPage.SetData(BuildCoopRows(s.Coops));
             _keyPage.SetRanks(s.Coops);
+            _keyPage.SetStats(s.Stats);
             _calPage.SetGameDate(s.GameDayIdx, s.TimeZone);
 
             double avg = s.Stats.Average(v => v);
