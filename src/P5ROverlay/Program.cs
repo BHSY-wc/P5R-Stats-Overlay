@@ -441,6 +441,13 @@ namespace P5ROverlay
             Pump(400);
             f.ShotTo(Path.Combine(outDir, "3a_关键_滚动.png"));
 
+            // 关键页：滚到「交涉 · 金钱」整组，检查太阳的死线与武见妙的打折行
+            f.DebugSetup(2, true);
+            f.DebugKeyScroll(760);
+            f.Location = new System.Drawing.Point(40, 40);
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "3a2_关键_交涉.png"));
+
             // 关键页：滚到底看「挑战 · 汉堡」组的五维徽章
             f.DebugSetup(2, true);
             f.DebugKeyScroll(int.MaxValue);
