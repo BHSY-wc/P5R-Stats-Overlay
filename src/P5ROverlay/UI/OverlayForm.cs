@@ -68,7 +68,8 @@ namespace P5ROverlay
         private KeyPage _keyPage;
         private CalendarPage _calPage;
         private RichTextBox _logBox;
-        private Panel _settings;
+        private ScrollHost _logHost;      // 日志也套同一个自绘滚动条，不然一根白条子戳在那儿
+        private ScrollHost _settings;
         private Label _statusLabel;
         private NotifyIcon _tray;
 
@@ -236,10 +237,15 @@ namespace P5ROverlay
                 ReadOnly = true,
                 DetectUrls = false,
                 WordWrap = true,
-                ScrollBars = RichTextBoxScrollBars.Vertical,
+                ScrollBars = RichTextBoxScrollBars.None,   // 滚动交给外面的 ScrollHost
                 Font = new Font("Consolas", 9.5f),
                 Visible = false,
             };
+
+            // 日志区：RichTextBox 拉成和内容一样高，滚动条由 ScrollHost 自绘
+            _logHost = new ScrollHost { Visible = false };
+            _logBox.Visible = true;
+            _logHost.Content.Controls.Add(_logBox);
 
             _statusLabel = new Label
             {
@@ -253,14 +259,14 @@ namespace P5ROverlay
 
             BuildSettingsPanel();
 
-            Controls.AddRange(new Control[] { _statPage, _coopPage, _keyPage, _calPage, _logBox, _settings, _statusLabel, _title, _btnExpand, _btnHide });
+            Controls.AddRange(new Control[] { _statPage, _coopPage, _keyPage, _calPage, _logHost, _settings, _statusLabel, _title, _btnExpand, _btnHide });
             Controls.AddRange(_tabs);
             _settings.BringToFront();
             _statPage.BringToFront();
             _coopPage.BringToFront();
             _keyPage.BringToFront();
             _calPage.BringToFront();
-            _logBox.BringToFront();
+            _logHost.BringToFront();
         }
 
         private Label MakeButton(string text, string tip, EventHandler onClick)
@@ -321,10 +327,14 @@ namespace P5ROverlay
 
         private void BuildSettingsPanel()
         {
-            _settings = new Panel { Visible = false, BorderStyle = BorderStyle.None, AutoScroll = true };
+            // 自绘滚动条：系统的白条子跟整页配色打架，见 ScrollHost
+            _settings = new ScrollHost { Visible = false };
             _settings.MouseDown += DragStart;
             _settings.MouseMove += DragMove;
             _settings.MouseUp += DragEnd;
+            _settings.Content.MouseDown += DragStart;
+            _settings.Content.MouseMove += DragMove;
+            _settings.Content.MouseUp += DragEnd;
 
             _capOpacity = MakeCap("窗口透明度");
             _capBg = MakeCap("背景颜色");
@@ -507,7 +517,7 @@ namespace P5ROverlay
                 Tag = "by",
             };
 
-            _settings.Controls.AddRange(new Control[]
+            _settings.Content.Controls.AddRange(new Control[]
             {
                 _capOpacity, _opacityBar, _opacityVal,
                 _capBg, _capText, _capAccent,
@@ -520,10 +530,10 @@ namespace P5ROverlay
                 _capPreview, _preview, _tipLabel,
                 _verLabel, _byLabel,
             });
-            _settings.Controls.AddRange(_refreshBtns);
-            foreach (var slot in _slots) { _settings.Controls.Add(slot.Cap); _settings.Controls.Add(slot.Btn); }
+            _settings.Content.Controls.AddRange(_refreshBtns);
+            foreach (var slot in _slots) { _settings.Content.Controls.Add(slot.Cap); _settings.Content.Controls.Add(slot.Btn); }
             foreach (var arr in new[] { _bgSw, _fgSw, _acSw, _growSw })
-                foreach (var s in arr) _settings.Controls.Add(s);
+                foreach (var s in arr) _settings.Content.Controls.Add(s);
         }
 
         private static Label MakeCap(string text) => new Label
@@ -634,7 +644,8 @@ namespace P5ROverlay
                 _logBox.BackColor = _theme.Bg2;
                 _logBox.ForeColor = _theme.Text;
             }
-            if (_settings != null) _settings.BackColor = _theme.Bg2;
+            _logHost?.SetTheme(_theme);
+            if (_settings != null) _settings.SetTheme(_theme);
 
             foreach (var c in Controls.OfType<Label>())
             {
@@ -649,7 +660,7 @@ namespace P5ROverlay
         private void StyleSettingsControls()
         {
             if (_settings == null) return;
-            foreach (var c in _settings.Controls)
+            foreach (var c in _settings.Content.Controls)
             {
                 switch (c)
                 {
@@ -778,7 +789,7 @@ namespace P5ROverlay
             if (!_expanded)
             {
                 // 收起态：只有标题一行，别的一概不显示
-                _statPage.Visible = _coopPage.Visible = _keyPage.Visible = _calPage.Visible = _logBox.Visible = _settings.Visible = false;
+                _statPage.Visible = _coopPage.Visible = _keyPage.Visible = _calPage.Visible = _logHost.Visible = _settings.Visible = false;
                 _statusLabel.Visible = false;
                 _title.SetBounds(16, 4, Math.Max(60, w - 92), Math.Max(20, h - 8));
                 return;
@@ -795,19 +806,21 @@ namespace P5ROverlay
             _coopPage.Bounds = body;
             _keyPage.Bounds = body;
             _calPage.Bounds = body;
-            _logBox.Bounds = new Rectangle(body.X + 8, body.Y + 6, body.Width - 16, body.Height - 12);
+            _logHost.Bounds = body;
+            _logBox.Bounds = new Rectangle(8, 6, Math.Max(60, _logHost.ViewportWidth - 16), Math.Max(40, body.Height - 12));
 
             _statPage.Visible = _page == PAGE_STAT;
             _coopPage.Visible = _page == PAGE_COOP;
             _keyPage.Visible = _page == PAGE_KEY;
             _calPage.Visible = _page == PAGE_CAL;
-            _logBox.Visible = _page == PAGE_LOG;
+            _logHost.Visible = _page == PAGE_LOG;
             _settings.Visible = _page == PAGE_SET;
             if (_page == PAGE_SET)
             {
                 _settings.Bounds = body;
                 LayoutSettings();
             }
+            if (_page == PAGE_LOG) SyncLogHeight();
 
             _statusLabel.Visible = true;
             _statusLabel.SetBounds(16, h - statusH - 2, w - 32, statusH);
@@ -816,13 +829,14 @@ namespace P5ROverlay
         private void LayoutSettings()
         {
             if (_settings == null) return;
-            int w = _settings.Width;
+            // 视口宽 = 扣掉右侧自绘滚动条那一列，布局按这个宽度算，条出不出现都不会抖
+            int w = _settings.ViewportWidth;
             if (w < 200) return;
 
             int y = 8;
             int capW = 122, colX = 126;     // 「涨点动画时长」六个字要留够，否则末字被裁
 
-            // 右侧留 22px 给竖滚动条，否则「100%」「0.90 秒」会贴到滚动条下面被裁
+            // 右侧留 22px，滑块和数值不贴到滚动条上
             const int sbW = 22;
             _opacityBar.SetBounds(colX, y, Math.Max(60, w - colX - 104), 42);
             int th = Math.Max(30, _opacityBar.Height);
@@ -880,6 +894,9 @@ namespace P5ROverlay
 
             _verLabel.SetBounds(4, y, Math.Max(80, w - 130), 22);
             _byLabel.SetBounds(w - 136, y, 128, 22);
+            y += 22;
+
+            _settings.ContentHeight = y + 10;
         }
 
         /// <summary>快捷键槽位：两列铺开，返回占用的行数。</summary>
@@ -1147,6 +1164,8 @@ namespace P5ROverlay
         private void DragStart(object sender, MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left || _clickThrough) return;
+            // 落在自绘滚动条上就交给它拖滑块，别顺手把窗口也拖走
+            if (sender == _settings && _settings != null && _settings.HitBar(e.Location)) return;
             _dragging = true;
             var c = sender as Control;
             _dragScreen = c != null ? c.PointToScreen(e.Location) : PointToScreen(e.Location);
@@ -2006,14 +2025,49 @@ namespace P5ROverlay
                 var keep = _logBox.Lines.Skip(_logBox.Lines.Length - 400).ToArray();
                 _logBox.Lines = keep;
             }
+            SyncLogHeight();
             if (_page == PAGE_LOG) ScrollLogToEnd();
+        }
+
+        /// <summary>
+        /// 日志框拉成和文字一样高，滚动交给外面的 ScrollHost（RichTextBox 自带的条没法着色）。
+        /// 先按视口宽设宽度，WordWrap 的换行位置才和实际显示一致，量出来的高度才准。
+        /// </summary>
+        private void SyncLogHeight()
+        {
+            if (_logHost == null || _logBox == null || _logBox.IsDisposed) return;
+
+            int w = Math.Max(60, _logHost.ViewportWidth - 16);
+            if (_logBox.Width != w) _logBox.Width = w;
+
+            int h = Math.Max(40, _logHost.Height - 12);
+            if (_logBox.TextLength > 0)
+            {
+                // 最后一个字符的逻辑坐标就是文本末尾；再加一行行高的余量
+                var last = _logBox.GetPositionFromCharIndex(_logBox.TextLength - 1);
+                if (last.Y > 0) h = Math.Max(h, last.Y + _logBox.Font.Height + 12);
+            }
+            if (_logBox.Height != h) _logBox.Height = h;
+            _logHost.ContentHeight = h + 12;
         }
 
         private void ScrollLogToEnd()
         {
-            if (_logBox == null) return;
-            _logBox.SelectionStart = _logBox.TextLength;
-            _logBox.ScrollToCaret();
+            if (_logHost == null) return;
+            _logHost.SetOffset(int.MaxValue);   // SetOffset 内部 clamp 到最大值
+        }
+
+        /// <summary>自检：当前日志区的滚动偏移 / 内容高度，用来确认没被裁掉。</summary>
+        public (int Offset, int ContentH, int ViewH) DebugLogScroll()
+            => _logHost == null ? (-1, -1, -1) : (_logHost.ScrollOffset, _logHost.ContentHeight, _logHost.Height);
+
+        /// <summary>自检：灌假日志把日志区撑过一屏（只进内存，不写 log 文件）。</summary>
+        public void DebugFillLog(int n)
+        {
+            for (int i = 0; i < n; i++)
+                AppendLog($"{DateTime.Now:HH:mm:ss}  [test] 第 {i + 1} 行：这一行只是把日志撑长，用来看自绘滚动条");
+            if (_page == PAGE_LOG) ScrollLogToEnd();
+            Application.DoEvents();
         }
 
         // ================================================================== 设置读写
@@ -2238,6 +2292,35 @@ namespace P5ROverlay
             };
             foreach (var c in s.Coops) n.Coops.Add(new CoopEntry { Id = c.Id, Rank = c.Rank, Points = c.Points });
             return n;
+        }
+
+        /// <summary>自检：把设置页滚到指定像素位置（看自绘滚动条的滑块位置）。</summary>
+        public void DebugScrollSettings(int offset)
+        {
+            _settings?.SetOffset(offset);
+            Application.DoEvents();
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+        /// <summary>
+        /// 自检：把滚轮消息发给设置页里的一个普通 Label，返回滚完的偏移。
+        /// 真机上滚轮时鼠标就压在 Label 上，靠的是 WM_MOUSEWHEEL 沿父链冒泡到 ScrollHost。
+        /// </summary>
+        public int DebugWheelSettings()
+        {
+            if (_settings == null) return -1;
+            var c = _settings.Content.Controls.OfType<Label>().FirstOrDefault();
+            if (c == null) return -1;
+
+            const int WM_MOUSEWHEEL = 0x020A;
+            int delta = -120;                                  // 往下一格
+            IntPtr wp = (IntPtr)(delta << 16);
+            IntPtr lp = (IntPtr)((40 << 16) | 20);
+            SendMessage(c.Handle, WM_MOUSEWHEEL, wp, lp);
+            Application.DoEvents();
+            return _settings.ScrollOffset;
         }
 
         /// <summary>自检：直接摆好日历页的状态（无游戏时截排版用）。</summary>

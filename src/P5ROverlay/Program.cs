@@ -426,11 +426,30 @@ namespace P5ROverlay
                 f.ShotTo(Path.Combine(outDir, name + ".png"));
             }
 
+            // 日志超出一屏：自绘滚动条应出现在右侧，并且已经滚到底
+            f.DebugSetup(4, true);
+            f.DebugFillLog(60);
+            Pump(300);
+            var ls = f.DebugLogScroll();
+            Console.WriteLine($"[selftest] 日志 offset={ls.Offset} contentH={ls.ContentH} viewH={ls.ViewH}");
+            f.ShotTo(Path.Combine(outDir, "4b_日志_滚动.png"));
+
             // 设置页拉高：快捷键 + 小键盘导航两块要一起入镜，别被折叠在滚动条下面
             f.DebugSetup(5, true);
             f.Size = new System.Drawing.Size(600, 800);
             Pump(500);
             f.ShotTo(Path.Combine(outDir, "5b_设置_快捷键.png"));
+
+            // 滚到中段：确认内容跟着上移、滑块滑到中间（自绘滚动条的位置换算）
+            f.Size = new System.Drawing.Size(600, 660);
+            f.DebugScrollSettings(0);
+            Pump(150);
+            int rolled = f.DebugWheelSettings();
+            Console.WriteLine("[selftest] 滚轮一格后 offset = " + rolled);
+            f.DebugScrollSettings(320);
+            Pump(300);
+            f.ShotTo(Path.Combine(outDir, "5d_设置_滚动.png"));
+            f.DebugScrollSettings(0);
 
             // 最小宽度：动画两行（滑块 + 秒数、8 色块 + 自定义）最容易挤，单独留一张
             f.Size = new System.Drawing.Size(432, 660);
