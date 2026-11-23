@@ -61,8 +61,10 @@ namespace P5ROverlay
         private long _statsAddr;
         private long _coopAddr;
         private long _dateAddr;
+        private int _dateMiss;                      // 日期块连续解析失败的次数
         private long _lastLocate;                   // 上次尝试定位 Coop/日期的时间戳（TickCount64）
         private const int LocateRetryMs = 2000;     // 补定位的最小间隔，防止每轮都去翻内存
+        private const int DateMissLimit = 5;        // 连续 5 帧读不出日期才认为地址失效
 
         public bool Attached => _h != IntPtr.Zero && _statsAddr != 0;
         public int Pid => _pid;
@@ -142,8 +144,8 @@ namespace P5ROverlay
 
             Log.W($"已附加 P5R.exe（PID {_pid}），基址 0x{_moduleBase:X}，" +
                   $"签名 {hits.Count} 处，五维 0x{_statsAddr:X}，" +
-                  $"Coop {( _coopAddr != 0 ? "0x" + _coopAddr.ToString("X") : "未定位")}，" +
-                  $"日期 {(_dateAddr != 0 ? "0x" + _dateAddr.ToString("X") : "未定位")}" +
+                  $"Coop {(_coopAddr != 0 ? "0x" + _coopAddr.ToString("X") : "未定位")}，" +
+                  $"日期 {(_dateAddr != 0 ? "0x" + _dateAddr.ToString("X") + $"（五维-0x{_statsAddr - _dateAddr:X}）" : "未定位")}" +
                   $"（{sw.ElapsedMilliseconds} ms）");
             note = "";
             return true;
@@ -291,16 +293,22 @@ namespace P5ROverlay
         /// <summary>
         /// 日期块：8 字节 = (dayIdx u16, 标签 u16, dayIdx u16, 时段 u16)，
         /// dayIdx 从 2016-04-01 起算，时段 5 = 放学后、6 = 夜晚。
-        /// 实测与五维数组同属 GlobalWork，相隔 -0x9190；换版本后自动退化为向上搜索。
+        /// 实测与五维数组同属 GlobalWork，相隔 -0x9190。
+        ///
+        /// 以前找不到就在 stats 往上 0x6000 里线性搜「第一个合法块」，而那段内存里全是
+        /// 0x0101 填充串（257 天 = 12/14），一掉进兜底就把日期钉死在错值上。
+        /// 现在只在固定偏移 ±0x40 内微调；找不到就返回 0，下一轮再试 ——
+        /// 宁可这帧没有日期，也不能显示一个错的。
         /// </summary>
         private long LocateDate(long statsAddr)
         {
-            foreach (long cand in new[] { statsAddr - 0x9190 })
-                if (IsDateBlock(cand)) return cand;
+            long fixedAddr = statsAddr - 0x9190;
+            if (IsDateBlock(fixedAddr)) return fixedAddr;
 
-            // 兜底：往上找 0x5000，取最靠近五维的那个合法块
-            for (long a = statsAddr - 0x200; a > statsAddr - 0x6000; a -= 2)
-                if (IsDateBlock(a)) return a;
+            for (long a = fixedAddr - 0x40; a <= fixedAddr + 0x40; a += 2)
+                if (a != fixedAddr && IsDateBlock(a)) return a;
+
+            Log.W($"日期块定位失败：0x{fixedAddr:X} 附近 ±0x40 内没有合法结构");
             return 0;
         }
 
@@ -316,9 +324,39 @@ namespace P5ROverlay
             int tz = BitConverter.ToUInt16(b, 6);
             int flag = BitConverter.ToUInt16(b, 8);
 
+            // 0x0101 填充：内存里成片出现 "01 01 01 01 01 01 00 00"，
+            // 按日期结构解就是两个 257（= 2016-12-14），必须先排掉。
+            if (d1 == 0x0101 && tag == 0x0101) return false;
+
             // d1 == d2 是这块结构最强的特征；dayIdx 从 1 起（0 是没读到的空块）
             return d1 == d2 && d1 >= 1 && d1 <= 400 && tz <= 8 &&
                    tag >= 0x0100 && tag <= 0x0110 && flag <= 1;
+        }
+
+        /// <summary>
+        /// 解析日期块。刻意不再要求两个 day 槽相等：切日 / 切时段的那一瞬间它们会短暂不同步，
+        /// 以前正是这时判定「不像日期块」、掉进兜底搜错块。这里取第一个槽（当前日）即可。
+        /// </summary>
+        private bool TryParseDate(long a, out int dayIdx, out int tz)
+        {
+            dayIdx = -1;
+            tz = -1;
+
+            var b = ReadBytes(a, 8);
+            if (b == null) return false;
+
+            int d1 = BitConverter.ToUInt16(b, 0);
+            int tag = BitConverter.ToUInt16(b, 2);
+            int t = BitConverter.ToUInt16(b, 6);
+
+            if (d1 < 1 || d1 > 400) return false;
+            if (tag < 0x0100 || tag > 0x0110) return false;
+            if (d1 == 0x0101 && tag == 0x0101) return false;   // 填充串
+            if (t > 8) return false;
+
+            dayIdx = d1;
+            tz = t;
+            return true;
         }
 
         /// <summary>
@@ -334,16 +372,7 @@ namespace P5ROverlay
             long a = _dateAddr;                 // long 读是原子的，不用加锁
             if (!Attached || a == 0) return false;
 
-            var db = ReadBytes(a, 8);
-            if (db == null) return false;
-
-            int d1 = BitConverter.ToUInt16(db, 0);
-            int d2 = BitConverter.ToUInt16(db, 4);
-            if (d1 != d2 || d1 < 1 || d1 > 400) return false;
-
-            dayIdx = d1;
-            tz = BitConverter.ToUInt16(db, 6);
-            return true;
+            return TryParseDate(a, out dayIdx, out tz);
         }
 
         /// <summary>读一帧。读不到返回 null（游戏已退出）。</summary>
@@ -418,19 +447,23 @@ namespace P5ROverlay
 
             if (_dateAddr != 0)
             {
-                var db = ReadBytes(_dateAddr, 8);
-                if (db != null)
+                if (TryParseDate(_dateAddr, out int dIdx, out int dTz))
                 {
-                    int d1 = BitConverter.ToUInt16(db, 0);
-                    int d2 = BitConverter.ToUInt16(db, 4);
-                    if (d1 == d2 && d1 >= 1 && d1 <= 400)
-                    {
-                        snap.GameDayIdx = d1;
-                        snap.TimeZone = BitConverter.ToUInt16(db, 6);
-                    }
-                    else _dateAddr = LocateDate(_statsAddr);
+                    snap.GameDayIdx = dIdx;
+                    snap.TimeZone = dTz;
+                    _dateMiss = 0;
                 }
-                else _dateAddr = LocateDate(_statsAddr);
+                else if (++_dateMiss >= DateMissLimit)
+                {
+                    // 单帧读不出来（正在切日 / 切时段）先不动地址；连续失败才认定地址失效
+                    _dateMiss = 0;
+                    long old = _dateAddr;
+                    _dateAddr = LocateDate(_statsAddr);
+                    Log.W("日期块连续读失败，重定位：0x" + old.ToString("X") + " → " +
+                          (_dateAddr != 0
+                               ? "0x" + _dateAddr.ToString("X") + $"（五维-0x{_statsAddr - _dateAddr:X}）"
+                               : "未定位"));
+                }
             }
             return snap;
         }
