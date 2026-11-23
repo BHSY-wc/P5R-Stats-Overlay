@@ -60,10 +60,18 @@ namespace P5ROverlay
 
         private readonly Dictionary<int, GrowFx> _grow = new Dictionary<int, GrowFx>();
         private readonly Timer _growTick = new Timer { Interval = 15 };
-        private const int GrowMs = 900;
 
-        /// <summary>增长高亮色：P5R 的荧光黄，红底、灰底、白条上都看得清。</summary>
-        protected static readonly Color GrowTint = Color.FromArgb(255, 222, 76);
+        /// <summary>增长动画默认时长（毫秒）。设置页可改，改完下一帧就按新时长播。</summary>
+        public const int DefGrowMs = 900;
+
+        /// <summary>增长动画默认高亮色：P5R 的荧光黄，红底、灰底、白条上都看得清。</summary>
+        public static readonly Color DefGrowTint = Color.FromArgb(255, 222, 76);
+
+        /// <summary>增长动画时长（毫秒），设置页写、绘制时读，所有页面共用一份。</summary>
+        public static int GrowMs = DefGrowMs;
+
+        /// <summary>增长动画高亮色（新涨出来那一段 + 「+N」），设置页可改。</summary>
+        public static Color GrowTint = DefGrowTint;
 
         /// <summary>从旧进度 fromRatio 起播一次增长动画；delta 是涨的点数（用来在条上方标数字）。</summary>
         protected void PlayGrow(int key, float fromRatio, int delta)

@@ -432,6 +432,11 @@ namespace P5ROverlay
             Pump(500);
             f.ShotTo(Path.Combine(outDir, "5b_设置_快捷键.png"));
 
+            // 最小宽度：动画两行（滑块 + 秒数、8 色块 + 自定义）最容易挤，单独留一张
+            f.Size = new System.Drawing.Size(432, 660);
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "5c_设置_最小宽度.png"));
+
             // 日历三种形态：月视图（格子自动换行）/ 日详情弹层 / 整页日视图
             // 先停掉数据线程和 10 秒心跳：否则真游戏的日期/状态行会把手喂的日期和文案冲掉
             f.DebugStopWorker();

@@ -82,6 +82,12 @@ namespace P5ROverlay
         private Panel _preview;
         private Label _pvLine1, _pvLine2, _capPreview;
 
+        // 涨点动画（时长 + 高亮色）
+        private TrackBar _growBar;
+        private Label _growVal, _capAnim, _capGrowColor;
+        private Label[] _growSw;
+        private Label _btnCustomGrow;
+
         // ---- 热键
         private const int HK_TOGGLE = 1, HK_EXPAND = 2, HK_PREV = 3, HK_NEXT = 4, HK_PASS = 5, HK_REFRESH = 6;
 
@@ -303,6 +309,16 @@ namespace P5ROverlay
             Color.FromArgb(210, 210, 220), Color.FromArgb(255, 255, 255),
         };
 
+        // 涨点高亮色：要能从红色（普通）/ 绿色（可升级）两种进度条上跳出来，
+        // 所以默认给荧光黄，其余也偏高亮；最后一个纯白给喜欢素一点的。
+        private static readonly Color[] GrowPalette =
+        {
+            PageBase.DefGrowTint,
+            Color.FromArgb(255, 176, 64), Color.FromArgb(120, 244, 176), Color.FromArgb(96, 216, 255),
+            Color.FromArgb(168, 152, 255), Color.FromArgb(255, 128, 168), Color.FromArgb(255, 96, 96),
+            Color.FromArgb(255, 255, 255),
+        };
+
         private void BuildSettingsPanel()
         {
             _settings = new Panel { Visible = false, BorderStyle = BorderStyle.None, AutoScroll = true };
@@ -316,6 +332,8 @@ namespace P5ROverlay
             _capAccent = MakeCap("强调颜色");
             _capMouse = MakeCap("鼠标交互");
             _capRefresh = MakeCap("刷新频率");
+            _capAnim = MakeCap("涨点动画时长");
+            _capGrowColor = MakeCap("涨点高亮色");
             _capKeys = MakeCap("快捷键");
             _capNav = MakeCap("小键盘导航（仅展开且可交互时接管）");
 
@@ -388,6 +406,37 @@ namespace P5ROverlay
                 _refreshBtns[i] = b;
             }
 
+            // 涨点动画：时长滑块 + 高亮色（改完立刻生效，下一次涨点就按新值播）
+            _growBar = new TrackBar
+            {
+                Minimum = 200,
+                Maximum = 2000,
+                Value = Math.Max(200, Math.Min(2000, PageBase.GrowMs)),
+                TickStyle = TickStyle.None,
+                SmallChange = 50,
+                LargeChange = 200,
+            };
+            _growVal = new Label
+            {
+                Text = GrowMsText(_growBar.Value),
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoSize = false,
+                BackColor = Color.Transparent,
+                Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold),
+            };
+            _growBar.ValueChanged += (s, e) =>
+            {
+                PageBase.GrowMs = _growBar.Value;
+                _growVal.Text = GrowMsText(_growBar.Value);
+                _statPage?.Invalidate();
+                _coopPage?.Invalidate();
+                SaveSettings();
+            };
+
+            _growSw = MakeSwatches(GrowPalette, c => { PageBase.GrowTint = c; });
+            _btnCustomGrow = MakeSmallButton("自定义…",
+                () => PickColor(PageBase.GrowTint, c => { PageBase.GrowTint = c; }));
+
             foreach (var slot in _slots)
             {
                 var s = slot;
@@ -415,6 +464,7 @@ namespace P5ROverlay
             {
                 Text = "改动立即生效，并自动保存到 p5r_overlay.ini。\r\n" +
                        "窗口透明度 100% 最清晰；调低会透出游戏画面，文字发虚。\r\n" +
+                       "涨点动画 0.2～2.0 秒，越长越看得清；高亮色只染新涨出来那一段和「+N」。\r\n" +
                        "点键位改键（Esc 取消）；「鼠标交互」关掉后鼠标穿透到游戏里。\r\n" +
                        "小键盘导航只在面板展开且可交互时接管，收起后立刻还给游戏。",
                 AutoSize = false,
@@ -464,13 +514,15 @@ namespace P5ROverlay
                 _btnCustomBg, _btnCustomText, _btnCustomAcc, _btnReset,
                 _capMouse, _btnMouseMode, _hintMouse,
                 _capRefresh, _hintFreq,
+                _capAnim, _growBar, _growVal,
+                _capGrowColor, _btnCustomGrow,
                 _capKeys, _capNav,
                 _capPreview, _preview, _tipLabel,
                 _verLabel, _byLabel,
             });
             _settings.Controls.AddRange(_refreshBtns);
             foreach (var slot in _slots) { _settings.Controls.Add(slot.Cap); _settings.Controls.Add(slot.Btn); }
-            foreach (var arr in new[] { _bgSw, _fgSw, _acSw })
+            foreach (var arr in new[] { _bgSw, _fgSw, _acSw, _growSw })
                 foreach (var s in arr) _settings.Controls.Add(s);
         }
 
@@ -542,6 +594,13 @@ namespace P5ROverlay
             _opacity = 1.00;
             _opacityBar.Value = 100;
             Opacity = _opacity;
+
+            // 涨点动画一并回默认（同一页的「外观」里，用户按一次恢复就该全回去）
+            PageBase.GrowTint = PageBase.DefGrowTint;
+            if (_growBar != null) _growBar.Value = PageBase.DefGrowMs;   // 触发 ValueChanged → GrowMs 同步
+            if (_growVal != null) _growVal.Text = GrowMsText(PageBase.GrowMs);
+            _statPage?.Invalidate();
+            _coopPage?.Invalidate();
         }
 
         private void SetRefreshSec(int sec)
@@ -551,6 +610,8 @@ namespace P5ROverlay
             SaveSettings();
             Log.W($"刷新频率改为 {_refreshSec}s");
         }
+
+        private static string GrowMsText(int ms) => (ms / 1000.0).ToString("0.00") + " 秒";
 
         // ================================================================== 主题
         private void ApplyTheme()
@@ -619,6 +680,7 @@ namespace P5ROverlay
                 }
             }
             if (_opacityVal != null) _opacityVal.ForeColor = _theme.Accent;
+            if (_growVal != null) _growVal.ForeColor = _theme.Accent;
             if (_preview != null) _preview.BackColor = _theme.Bg2;
             if (_pvLine1 != null) _pvLine1.ForeColor = _theme.Dim;
             if (_pvLine2 != null) _pvLine2.ForeColor = _theme.Accent;
@@ -641,6 +703,7 @@ namespace P5ROverlay
             MarkSwatches(_bgSw, BgPalette, _cBg);
             MarkSwatches(_fgSw, FgPalette, _cText);
             MarkSwatches(_acSw, AccentPalette, _cAccent);
+            MarkSwatches(_growSw, GrowPalette, PageBase.GrowTint);
         }
 
         private static void MarkSwatches(Label[] sw, Color[] pal, Color cur)
@@ -757,12 +820,14 @@ namespace P5ROverlay
             if (w < 200) return;
 
             int y = 8;
-            int capW = 104, colX = 108;
+            int capW = 122, colX = 126;     // 「涨点动画时长」六个字要留够，否则末字被裁
 
-            _opacityBar.SetBounds(colX, y, Math.Max(60, w - colX - 84), 42);
+            // 右侧留 22px 给竖滚动条，否则「100%」「0.90 秒」会贴到滚动条下面被裁
+            const int sbW = 22;
+            _opacityBar.SetBounds(colX, y, Math.Max(60, w - colX - 104), 42);
             int th = Math.Max(30, _opacityBar.Height);
             _capOpacity.SetBounds(4, y + (th - 20) / 2, capW, 20);
-            _opacityVal.SetBounds(w - 68, y + (th - 20) / 2, 62, 20);
+            _opacityVal.SetBounds(w - sbW - 78, y + (th - 20) / 2, 78, 20);
             y += th + 4;
 
             LayoutRow(_capBg, _bgSw, _btnCustomBg, ref y, w, capW, colX);
@@ -781,6 +846,15 @@ namespace P5ROverlay
                 _refreshBtns[i].SetBounds(colX + i * 52, y, 46, 24);
             _hintFreq.SetBounds(colX + _refreshBtns.Length * 52 + 8, y + 4, Math.Max(40, w - colX - _refreshBtns.Length * 52 - 16), 20);
             y += 32;
+
+            // 涨点动画：时长滑块（右边跟一个当前值），再一行高亮色
+            _growBar.SetBounds(colX, y, Math.Max(60, w - colX - 104), 42);
+            int gh = Math.Max(30, _growBar.Height);
+            _capAnim.SetBounds(4, y + (gh - 20) / 2, capW, 20);
+            _growVal.SetBounds(w - sbW - 78, y + (gh - 20) / 2, 78, 20);
+            y += gh + 2;
+
+            LayoutRow(_capGrowColor, _growSw, _btnCustomGrow, ref y, w, capW, colX);
 
             // 快捷键：两列，先全局热键，再小键盘导航（都能改键）
             _capKeys.SetBounds(4, y, capW, 20);
@@ -801,8 +875,8 @@ namespace P5ROverlay
             _pvLine2.SetBounds(10, 26, Math.Max(80, w - 40), 22);
             y += 58;
 
-            _tipLabel.SetBounds(4, y, Math.Max(120, w - 16), 84);
-            y += 88;
+            _tipLabel.SetBounds(4, y, Math.Max(120, w - 16), 102);
+            y += 106;
 
             _verLabel.SetBounds(4, y, Math.Max(80, w - 130), 22);
             _byLabel.SetBounds(w - 136, y, 128, 22);
@@ -826,16 +900,36 @@ namespace P5ROverlay
         private void LayoutRow(Label cap, Label[] sw, Label custom, ref int y, int w, int capW, int colX)
         {
             cap.SetBounds(4, y + 4, capW, 20);
+
+            int right = w - 24;                 // 右侧留竖滚动条
+            int n = sw?.Length ?? 0;
+
+            // 窄窗（432 甚至更窄）时 8 个 20px 色块 + 70px 按钮会顶出去，
+            // 先压间距，再压方块，最后让按钮自适应 —— 保证「自定义…」永远不被裁在窗外。
+            int gap = 24, box = 20;
+            int need = n * gap + (custom != null ? 6 + 70 : 0);
+            if (colX + need > right)
+            {
+                gap = 18;
+                need = n * gap + (custom != null ? 6 + 70 : 0);
+                if (colX + need > right) { box = 18; gap = 16; }
+            }
+
             int x = colX;
             if (sw != null)
             {
                 foreach (var s in sw)
                 {
-                    s.SetBounds(x, y + 3, 20, 20);
-                    x += 24;
+                    s.SetBounds(x, y + 3 + (20 - box) / 2, box, box);
+                    x += gap;
                 }
             }
-            if (custom != null) custom.SetBounds(x + 6, y + 3, 70, 21);
+            if (custom != null)
+            {
+                int cw = 70;
+                if (x + 6 + cw > right) cw = Math.Max(48, right - x - 6);
+                custom.SetBounds(x + 6, y + 3, cw, 21);
+            }
             y += 32;
         }
 
@@ -1960,6 +2054,11 @@ namespace P5ROverlay
                             case "RefreshSec":
                                 if (int.TryParse(val, out int rs)) refresh = Math.Max(1, Math.Min(60, rs));
                                 break;
+                            case "GrowMs":
+                                if (int.TryParse(val, out int gm))
+                                    PageBase.GrowMs = Math.Max(200, Math.Min(2000, gm));
+                                break;
+                            case "GrowColor": PageBase.GrowTint = ParseCol(val, PageBase.GrowTint); break;
                             default:
                                 var slot = _slots.FirstOrDefault(s => s.IniKey == key);
                                 if (slot != null && ParseHotkey(val, out uint hm, out uint hv, out string ht))
@@ -2012,6 +2111,8 @@ namespace P5ROverlay
                 sb.AppendLine("Accent=" + ColToStr(_cAccent));
                 sb.AppendLine("ClickThrough=" + _clickThrough);
                 sb.AppendLine("RefreshSec=" + _refreshSec);
+                sb.AppendLine("GrowMs=" + PageBase.GrowMs);
+                sb.AppendLine("GrowColor=" + ColToStr(PageBase.GrowTint));
                 foreach (var s in _slots) sb.AppendLine(s.IniKey + "=" + s.Text);
                 File.WriteAllText(SettingsPath, sb.ToString());
             }
