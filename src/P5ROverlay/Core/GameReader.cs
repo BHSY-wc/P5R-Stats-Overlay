@@ -308,8 +308,7 @@ namespace P5ROverlay
             for (long a = fixedAddr - 0x40; a <= fixedAddr + 0x40; a += 2)
                 if (a != fixedAddr && IsDateBlock(a)) return a;
 
-            Log.W($"日期块定位失败：0x{fixedAddr:X} 附近 ±0x40 内没有合法结构");
-            return 0;
+            return 0;       // 交给调用方决定要不要写日志（这里每 2 秒被问一次，别刷屏）
         }
 
         private bool IsDateBlock(long a)
