@@ -47,6 +47,77 @@ namespace P5ROverlay
         private readonly Dictionary<int, DateTime> _rowT = new Dictionary<int, DateTime>();
         private const int AnimMs = 700;
 
+        // ---- 增长动画（点数真的涨了才播）
+        //      进度条从旧值扫到新值，多出来那一段用高亮色单独画，
+        //      条上方同色飘出「+N」，扫完再淡出。只有变化的那一行播。
+        private sealed class GrowFx
+        {
+            public float From;       // 旧进度 0~1
+            public int Delta;        // 涨了多少点
+            public DateTime T0;
+            public float Freeze = -1f;   // >=0 时定格在这个进度（只给自检截图用）
+        }
+
+        private readonly Dictionary<int, GrowFx> _grow = new Dictionary<int, GrowFx>();
+        private readonly Timer _growTick = new Timer { Interval = 15 };
+        private const int GrowMs = 900;
+
+        /// <summary>增长高亮色：P5R 的荧光黄，红底、灰底、白条上都看得清。</summary>
+        protected static readonly Color GrowTint = Color.FromArgb(255, 222, 76);
+
+        /// <summary>从旧进度 fromRatio 起播一次增长动画；delta 是涨的点数（用来在条上方标数字）。</summary>
+        protected void PlayGrow(int key, float fromRatio, int delta)
+        {
+            if (delta <= 0) return;
+            _grow[key] = new GrowFx { From = P5R.Clamp01(fromRatio), Delta = delta, T0 = DateTime.Now };
+            if (!_growTick.Enabled) _growTick.Start();
+            Invalidate();
+        }
+
+        /// <summary>取消某一行的增长动画（掉点 / 换存档时用）。</summary>
+        protected void CancelGrow(int key) => _grow.Remove(key);
+
+        /// <summary>自检用：把某个 key 的增长动画定格在进度 p（0~1），方便逐帧截图。</summary>
+        protected void FreezeGrow(int key, float p)
+        {
+            if (_grow.TryGetValue(key, out var fx)) { fx.Freeze = P5R.Clamp01(p); Invalidate(); }
+        }
+
+        /// <summary>自检用：解除定格，让动画照常播完。</summary>
+        protected void ClearGrow()
+        {
+            foreach (var fx in _grow.Values) fx.Freeze = -1f;
+        }
+
+        /// <summary>这一行是否正在播增长动画。</summary>
+        protected bool GrowBusy(int key) => _grow.ContainsKey(key);
+
+        /// <summary>
+        /// 取这一行该画的进度：正在播增长动画时返回「旧值→新值」的插值，
+        /// 同时给出多出来那段的起点 from、点数 delta 和标签亮度 fade（末尾淡出）。
+        /// 没在播就直接返回 to，delta = 0。
+        /// </summary>
+        protected float GrowRatio(int key, float to, out float from, out int delta, out float fade)
+        {
+            from = to; delta = 0; fade = 0f;
+            if (!_grow.TryGetValue(key, out var fx)) return to;
+
+            if (fx.Freeze >= 0f)
+            {
+                from = fx.From; delta = fx.Delta; fade = 1f;
+                return fx.From + (to - fx.From) * P5R.EaseOut(fx.Freeze);
+            }
+
+            double ms = (DateTime.Now - fx.T0).TotalMilliseconds;
+            if (ms >= GrowMs) { _grow.Remove(key); return to; }
+
+            float p = P5R.Clamp01((float)(ms / GrowMs));
+            from = fx.From;
+            delta = fx.Delta;
+            fade = p < 0.70f ? 1f : 1f - (p - 0.70f) / 0.30f;     // 最后 30% 淡出
+            return fx.From + (to - fx.From) * P5R.EaseOut(p);
+        }
+
         /// <summary>某一行的入场进度 0→1；没有正在播的动画就是 1。</summary>
         protected float RowIntro(int key)
         {
@@ -79,6 +150,18 @@ namespace P5ROverlay
                     if ((now - kv.Value).TotalMilliseconds >= AnimMs) done.Add(kv.Key);
                 foreach (int k in done) _rowT.Remove(k);
                 if (_rowT.Count == 0) _anim.Stop();
+                Invalidate();
+            };
+
+            // 增长动画：逐帧重绘，播完（或行被滚走后再没人画）就停表
+            _growTick.Tick += (s, e) =>
+            {
+                DateTime now = DateTime.Now;
+                var done = new List<int>();
+                foreach (var kv in _grow)
+                    if (kv.Value.Freeze < 0 && (now - kv.Value.T0).TotalMilliseconds >= GrowMs + 300) done.Add(kv.Key);
+                foreach (int k in done) _grow.Remove(k);
+                if (_grow.Count == 0) { _growTick.Stop(); return; }
                 Invalidate();
             };
         }
@@ -166,7 +249,7 @@ namespace P5ROverlay
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) _anim.Dispose();
+            if (disposing) { _anim.Dispose(); _growTick.Dispose(); }
             base.Dispose(disposing);
         }
 
@@ -240,8 +323,13 @@ namespace P5ROverlay
             return h;
         }
 
-        /// <summary>P5R 式进度条：斜切轨道 + 红色填充 + 末端竖切。</summary>
-        protected void DrawBar(Graphics g, RectangleF r, double ratio, Color fill, Color track)
+        /// <summary>
+        /// P5R 式进度条：斜切轨道 + 填充 + 末端竖切。
+        /// deltaFrom &gt;= 0 时，[deltaFrom, ratio] 这一段是本次涨出来的部分，
+        /// 用 deltaFill 单独上色，并在分界处画一道竖线、推进端画一根游标。
+        /// </summary>
+        protected void DrawBar(Graphics g, RectangleF r, double ratio, Color fill, Color track,
+                               double deltaFrom = -1, Color? deltaFill = null)
         {
             if (r.Width < 14 || r.Height < 5) return;
             ratio = Math.Max(0, Math.Min(1, ratio));
@@ -251,17 +339,114 @@ namespace P5ROverlay
                 P5R.Fill(g, p, track);
                 P5R.Stroke(g, p, Color.FromArgb(90, P5R.Wire), 1f);
             }
-            float fw = (float)Math.Round(r.Width * ratio);
-            if (fw >= 5)
+
+            bool grow = deltaFill.HasValue && deltaFrom >= 0 && deltaFrom < ratio - 0.002;
+
+            FillBarPart(g, r, 0, grow ? Math.Min(deltaFrom, ratio) : ratio, fill, true);
+
+            if (grow)
             {
-                var fr = new RectangleF(r.X, r.Y, Math.Max(5f, fw), r.Height);
-                using var p = P5R.Skew(fr, -5f);
-                P5R.Fill(g, p, fill);
-                // 顶端一条高光，避免大片纯色
-                var hi = new RectangleF(fr.X + 1, fr.Y + 1, Math.Max(2f, fr.Width - 2), Math.Max(1f, fr.Height * 0.34f));
-                using var hp = P5R.Skew(hi, -5f);
-                P5R.Fill(g, hp, Color.FromArgb(64, Color.White));
+                FillBarPart(g, r, deltaFrom, ratio, deltaFill.Value, true);
+
+                // 分界竖线：一眼看清「从哪开始是涨的」（细一条就够，粗了像把条切断）
+                float x0 = r.X + (float)(r.Width * deltaFrom);
+                using (var pen = new Pen(Color.FromArgb(120, P5R.Ink), 1f))
+                    g.DrawLine(pen, x0, r.Y, x0, r.Bottom);
+
+                // 推进端游标：跟着扫过去的亮色短竖条
+                float x1 = r.X + (float)(r.Width * ratio);
+                using (var pen = new Pen(deltaFill.Value, 2f))
+                    g.DrawLine(pen, x1, r.Y - 3f, x1, r.Bottom + 3f);
             }
+        }
+
+        /// <summary>画进度条的一段（0~1 的区间），带顶端高光。</summary>
+        private static void FillBarPart(Graphics g, RectangleF r, double from, double to, Color c, bool gloss)
+        {
+            if (to <= from) return;
+            float x0 = r.X + (float)(r.Width * from);
+            float w = (float)(r.Width * (to - from));
+            if (w < 2f) return;
+
+            var fr = new RectangleF(x0, r.Y, w, r.Height);
+            using (var p = P5R.Skew(fr, -5f))
+                P5R.Fill(g, p, c);
+            if (!gloss) return;
+
+            var hi = new RectangleF(fr.X + 1, fr.Y + 1, Math.Max(2f, fr.Width - 2), Math.Max(1f, fr.Height * 0.34f));
+            using var hp = P5R.Skew(hi, -5f);
+            P5R.Fill(g, hp, Color.FromArgb(64, Color.White));
+        }
+
+        /// <summary>
+        /// 进度条上方的「+N」：斜切小牌 + 荧光黄字，headX 是推进端位置（牌尽量压在它头上）。
+        /// fade 由 <see cref="GrowRatio"/> 给出，播完自然消失。maxRight 用来防止牌顶出右边界。
+        /// </summary>
+        protected RectangleF DrawGrowTag(Graphics g, float headX, float barTop, int delta, float fade, float maxRight)
+        {
+            var box = GrowTagBox(g, headX, barTop, delta, fade, maxRight, out var f, out var s);
+            if (box.Width <= 0) return RectangleF.Empty;
+
+            int a = (int)(255 * P5R.Clamp01(fade));
+            using (var p = P5R.Skew(box, -5f))
+            {
+                P5R.Fill(g, p, Color.FromArgb((int)(210 * fade), P5R.Ink));
+                P5R.Stroke(g, p, Color.FromArgb((int)(210 * fade), GrowTint), 1f);
+            }
+            P5R.Text(g, s, f, box, Color.FromArgb(a, GrowTint),
+                     StringAlignment.Center, StringAlignment.Center, -0.12f, false);
+            f.Dispose();
+            return box;
+        }
+
+        /// <summary>
+        /// 紧凑版「+N」：小深底牌 + 荧光黄字，压在进度条的推进端上。
+        /// 好感行第二行只有一条窄缝，牌子放上面会压到角色名，所以直接骑在条头上。
+        /// </summary>
+        protected void DrawGrowText(Graphics g, float headX, float barTop, int delta, float fade,
+                                    float minX, float maxRight)
+        {
+            if (delta <= 0 || fade <= 0.02f) return;
+
+            using var f = P5R.F(12f, FontStyle.Bold);
+            string s = "+" + delta;
+            var sz = g.MeasureString(s, f);
+            float h = 14f, w = Math.Max(24f, sz.Width + 8f);
+            float x = Math.Max(minX, Math.Min(headX - w * 0.5f + 2f, Math.Max(minX, maxRight - w)));
+            var box = new RectangleF(x, barTop - 3.5f, w, h);
+
+            using (var p = P5R.Skew(box, -4f))
+                P5R.Fill(g, p, Color.FromArgb((int)(215 * P5R.Clamp01(fade)), P5R.Ink));
+
+            P5R.Text(g, s, f, box,
+                     Color.FromArgb((int)(255 * P5R.Clamp01(fade)), GrowTint),
+                     StringAlignment.Center, StringAlignment.Center, -0.10f, false);
+        }
+
+        /// <summary>只是算「+N」小牌的位置（不画），让调用方提前知道要给它让多少地方。</summary>
+        protected RectangleF GrowTagBox(Graphics g, float headX, float barTop, int delta, float fade, float maxRight)
+        {
+            var box = GrowTagBox(g, headX, barTop, delta, fade, maxRight, out var f, out _);
+            f?.Dispose();
+            return box;
+        }
+
+        private RectangleF GrowTagBox(Graphics g, float headX, float barTop, int delta, float fade,
+                                      float maxRight, out Font f, out string s)
+        {
+            f = null;
+            s = "";
+            if (delta <= 0 || fade <= 0.02f) return RectangleF.Empty;
+
+            f = P5R.F(12f, FontStyle.Bold);
+            s = "+" + delta;
+            var sz = g.MeasureString(s, f);
+            float h = 16f;
+            float w = Math.Max(26f, sz.Width + 10f);
+            float x = headX - w * 0.5f + 3f;
+            x = Math.Max(2f, Math.Min(x, Math.Max(2f, maxRight - w)));
+            float y = barTop - h - 2f;
+            return new RectangleF(x, y, w, h);
         }
     }
 
@@ -294,16 +479,44 @@ namespace P5ROverlay
         public void SetData(short[] s)
         {
             if (s == null) return;
+            bool first = !_hasPrev;
             var changed = new List<int>();
             for (int i = 0; i < 5 && i < s.Length; i++)
             {
-                // 首次拿到数据要整页进场；之后只有点数真的变了的那一项才动
-                if (!_hasPrev || _stats[i] != s[i]) changed.Add(i);
+                short old = _stats[i];
+                if (first)
+                {
+                    // 首次拿到数据：整页进场，不播增长
+                    changed.Add(i);
+                }
+                else if (s[i] > old)
+                {
+                    // 涨了：只走增长动画，不再整行滑动，免得两种动画打架
+                    int lvOld = GameTables.StatLevel(i, old);
+                    int lvNew = GameTables.StatLevel(i, s[i]);
+                    // 升级的话新一级的进度条本来就从空开始，也就从 0 扫起
+                    PlayGrow(i, lvNew > lvOld ? 0f : (float)StatRatio(i, old), s[i] - old);
+                }
+                else if (s[i] != old)
+                {
+                    CancelGrow(i);                      // 掉点（读档/换存档）：别让旧动画把条往回扫
+                    changed.Add(i);                     // 仍然走原来的入场动画
+                }
                 _stats[i] = s[i];
             }
             _hasPrev = true;
             PlayRows(changed.ToArray());   // 空数组内部直接返回，不会白启定时器
             Invalidate();
+        }
+
+        /// <summary>某一项在任意点数下的进度（0~1），用来算「涨之前」的起点。</summary>
+        private static double StatRatio(int i, int pts)
+        {
+            int lv = GameTables.StatLevel(i, pts);
+            if (lv >= 5) return 1.0;
+            var th = GameTables.StatTh[i];
+            int lo = th[lv - 1], hi = th[lv];
+            return Math.Max(0, Math.Min(1, (pts - lo) / (double)Math.Max(1, hi - lo)));
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -406,6 +619,12 @@ namespace P5ROverlay
             base.OnMouseDown(e);
         }
 
+        /// <summary>自检钩子：把某一项的增长动画定格在进度 p。</summary>
+        public void DebugFreezeGrow(int i, float p) => FreezeGrow(i, p);
+
+        /// <summary>自检钩子：解除所有定格。</summary>
+        public void DebugClearGrow() => ClearGrow();
+
         /// <summary>自检钩子：直接点开某一项的攻略层。</summary>
         public void DebugOpenStat(int i)
         {
@@ -432,12 +651,17 @@ namespace P5ROverlay
                 ratio = (pts - lo) / (double)Math.Max(1, hi - lo);
             }
 
-            // 动画：只有这一项的点数变了才播；没变就是满进度，不滑不滚
+            // 动画：入场（整行滑入）与增长（进度条从旧值扫到新值）互斥
+            //   - 点数涨了：行不滑、点数直接给最终值，只让进度条扫过去 + 标出涨了多少
+            //   - 首次拿到数据 / 掉点：走原来的入场动画
+            bool growing = GrowBusy(i);
             float t = RowIntro(i);
-            float ease = P5R.EaseOut(t);
+            float ease = growing ? 1f : P5R.EaseOut(t);
             int slide = (int)Math.Round((1f - ease) * 26);
             int shownPts = (int)Math.Round(pts * ease);
-            double shownRatio = ratio * ease;
+
+            // 条的显示进度：入场时按 ease 缩放，增长时从旧值插值到新值
+            float shownRatio = GrowRatio(i, (float)(ratio * ease), out float growFrom, out int growDelta, out float growFade);
 
             var block = new RectangleF(x + 6 + slide, y + 2, w - 12, h - 4);
             if (block.Width < 60 || block.Height < 24) { _rowHit[i] = RectangleF.Empty; return; }
@@ -500,8 +724,14 @@ namespace P5ROverlay
             if (barW > 24)
             {
                 bar = new RectangleF(barX, badge.Y + badge.Height * 0.5f - 3.5f, barW, 7);
-                DrawBar(g, bar, shownRatio, max ? P5R.Paper : T.Accent, Color.FromArgb(190, P5R.Ink));
+                DrawBar(g, bar, shownRatio, max ? P5R.Paper : T.Accent, Color.FromArgb(190, P5R.Ink),
+                        growDelta > 0 ? growFrom : -1, GrowTint);
             }
+
+            // --- 涨了多少：同色小牌压在推进端上方（牌的位置先算出来，好让「还差」让位）
+            var growTag = RectangleF.Empty;
+            if (bar.Width > 0 && growDelta > 0)
+                growTag = DrawGrowTag(g, bar.X + bar.Width * shownRatio, bar.Y, growDelta, growFade, bar.Right);
 
             // --- 进度条上方：「还差 N  ▶  Lv下一级」
             //     整组不再贴进度条左端，而是向右让出一段（约等于箭头原来的位置），箭头与 Lv 跟着右移
@@ -520,6 +750,10 @@ namespace P5ROverlay
                 float shift = Math.Min(110f, Math.Max(40f, bar.Width * 0.16f));
                 shift = Math.Min(shift, Math.Max(0f, bar.Width - totalW - 6f));
                 float numX = bar.X + shift;
+
+                // 「+N」在播的时候这一行不画「还差」：两组数字挤在一起谁也读不清，
+                // 而且「还差」本来就在跟着涨点变小，0.9 秒后再出现不影响读数
+                if (growTag.Width > 0) return;
 
                 var boxNum = new RectangleF(numX, bar.Y - 24f, szN.Width + 2f, 20f);
                 P5R.Text(g, sNum, fNum, boxNum, max ? P5R.Ink : P5R.RedHot,
@@ -571,13 +805,23 @@ namespace P5ROverlay
                 if (!r.IsHeader && r.Id > 0) before[r.Id] = (r.Rank, r.Points);
 
             var changed = new List<int>();
+            var grow = new List<(int Id, float From, int Delta)>();
             if (rows != null)
             {
                 foreach (var r in rows)
                 {
                     if (r.IsHeader || r.Id <= 0) continue;
-                    if (!before.TryGetValue(r.Id, out var old) || old.Rank != r.Rank || old.Points != r.Points)
+                    if (!before.TryGetValue(r.Id, out var old)) { changed.Add(r.Id); continue; }   // 新出现的角色
+                    if (old.Rank == r.Rank && old.Points == r.Points) continue;                   // 没变
+
+                    // 同一 Rank 内点数涨了 = 涨好感，播增长；升 Rank / 掉点走入场动画
+                    if (old.Rank == r.Rank && r.Points > old.Points && r.Need.HasValue && r.Need.Value > 0)
+                        grow.Add((r.Id, old.Points / (float)r.Need.Value, r.Points - old.Points));
+                    else
+                    {
+                        CancelGrow(r.Id);
                         changed.Add(r.Id);
+                    }
                 }
             }
 
@@ -587,6 +831,7 @@ namespace P5ROverlay
             if (_scroll < 0) _scroll = 0;
 
             PlayRows(changed.ToArray());
+            foreach (var g in grow) PlayGrow(g.Id, g.From, g.Delta);
             Invalidate();
         }
 
@@ -616,6 +861,12 @@ namespace P5ROverlay
             foreach (var h in _hit) if (h.Rect.Contains(p)) return true;
             return false;
         }
+
+        /// <summary>自检钩子：把某个角色的增长动画定格在进度 p。</summary>
+        public void DebugFreezeGrow(int id, float p) => FreezeGrow(id, p);
+
+        /// <summary>自检钩子：解除所有定格。</summary>
+        public void DebugClearGrow() => ClearGrow();
 
         /// <summary>自检钩子：直接点开第 i 个可见角色的能力表。</summary>
         public void DebugOpenCoop(int i)
@@ -812,8 +1063,10 @@ namespace P5ROverlay
             bool max = r.Rank >= 10;
             bool ready = !max && r.Need.HasValue && r.Need.Value > 0 && r.Points >= r.Need.Value;
 
+            // 增长时不再整行滑入，两种动画叠在一起会看不清条扫到哪
+            bool growing = GrowBusy(r.Id);
             float t = RowIntro(r.Id);
-            float ease = P5R.EaseOut(t);
+            float ease = growing ? 1f : P5R.EaseOut(t);
             int slide = (int)Math.Round((1f - ease) * 22);
 
             var block = new RectangleF(x + 6 + slide, y + 3, w - 12, RowH - 7);
@@ -927,16 +1180,23 @@ namespace P5ROverlay
             if (max) { ratio = 1.0; barFill = P5R.Paper; }
             else if (r.Need.HasValue && r.Need.Value > 0)
             {
-                ratio = (double)r.Points / r.Need.Value * ease;
+                ratio = (double)r.Points / r.Need.Value;
                 barFill = ready ? Color.FromArgb(126, 236, 178) : T.Accent;
             }
             else { ratio = 0; barFill = Theme.Blend(T.Text, T.Bg, 0.5); }
 
+            // 好感涨了：条从旧值扫到新值，多出来那段用荧光黄标出，头上飘「+N」
+            float shown = GrowRatio(r.Id, (float)(ratio * ease), out float growFrom, out int growDelta, out float growFade);
+
             // 「还差 N」已经挪到上面的 R 链条里了，这里不再重复；其余状态照旧
             bool showState = !string.IsNullOrEmpty(r.State) && !r.State.StartsWith("还差");
-            var bar = new RectangleF(innerX, block.Bottom - 13,
+            var bar = new RectangleF(innerX, block.Bottom - 11,
                                      Math.Max(40f, showState ? rowW - 120 : rowW - 10), 6);
-            DrawBar(g, bar, ratio, barFill, Color.FromArgb(190, P5R.Ink));
+            DrawBar(g, bar, shown, barFill, Color.FromArgb(190, P5R.Ink),
+                    growDelta > 0 ? growFrom : -1, GrowTint);
+
+            if (growDelta > 0)
+                DrawGrowText(g, bar.X + bar.Width * shown, bar.Y, growDelta, growFade, bar.X, bar.Right - 4);
 
             if (showState)
             {

@@ -65,6 +65,13 @@ namespace P5ROverlay
                 return;
             }
 
+            // 增长动画自检：喂一次「点数上涨」，按时间轴逐帧截图
+            if (args.Any(a => a.Equals("--animshot", StringComparison.OrdinalIgnoreCase)))
+            {
+                RunAnimShot(AppContext.BaseDirectory);
+                return;
+            }
+
             // 小键盘导航自检：不依赖真实按键，直接调 Nav 接口，逐页截光标/弹层
             if (args.Any(a => a.Equals("--navshot", StringComparison.OrdinalIgnoreCase)))
             {
@@ -317,6 +324,81 @@ namespace P5ROverlay
             Shot("N14_收尾");
 
             f.DebugStopWorker();
+            f.Close();
+        }
+
+        /// <summary>增长动画自检：喂一次「点数上涨」，按时间轴逐帧截图。</summary>
+        private static void RunAnimShot(string dir)
+        {
+            string outDir = Path.Combine(dir, "shots");
+            try { Directory.CreateDirectory(outDir); } catch { }
+
+            var f = new OverlayForm();
+            f.Location = new System.Drawing.Point(40, 40);
+            f.Show();
+            Pump(1200);
+            f.DebugStopWorker();               // 先关数据线程：否则 5s 一刷会把演示数据冲成真实数值
+            f.DebugDemoData();
+            Pump(600);
+
+            void Frame(string name, int ms)
+            {
+                Pump(ms);
+                f.ShotTo(Path.Combine(outDir, name + ".png"));
+            }
+
+            // ---- 五维：知识 90 → 108（同一等级内扫条）
+            f.DebugSetup(0, true);
+            Pump(900);                          // 等入场动画播完，画面静止再喂
+            f.DebugStatGrow(0, 18);
+            f.DebugFreezeStatGrow(0, 0.10f);
+            Frame("A1_五维_增长_起", 60);
+            f.DebugFreezeStatGrow(0, 0.45f);
+            Frame("A2_五维_增长_中", 60);
+            f.DebugFreezeStatGrow(0, 0.80f);
+            Frame("A3_五维_增长_偏后", 60);
+            f.DebugClearGrow();
+            Frame("A4_五维_增长_播完", 400);
+
+            // 另一项也涨，看两个不同的条各自扫
+            f.DebugStatGrow(3, 7);
+            f.DebugFreezeStatGrow(3, 0.55f);
+            Frame("A5_五维_增长_另一行", 60);
+
+            // ---- 好感：喜多川祐介 +6（同一 Rank 内涨好感）
+            f.DebugSetup(1, true);
+            Pump(900);
+            f.DebugCoopGrow(5, 6);
+            f.DebugFreezeCoopGrow(5, 0.10f);
+            Frame("B1_好感_增长_起", 60);
+            f.DebugFreezeCoopGrow(5, 0.50f);
+            Frame("B2_好感_增长_中", 60);
+            f.DebugFreezeCoopGrow(5, 0.90f);
+            Frame("B3_好感_增长_偏后", 60);
+            f.DebugClearGrow();
+            Frame("B4_好感_增长_播完", 400);
+
+            // 从 0 点开始涨：整段都是黄的
+            f.DebugCoopGrow(8, 5);
+            f.DebugFreezeCoopGrow(8, 0.45f);
+            Frame("B5_好感_增长_另一行", 60);
+            f.DebugClearGrow();
+
+            // 最小宽度：条变短、右侧还有状态文字，看「+N」会不会顶出去
+            f.Size = new System.Drawing.Size(432, 520);
+            Pump(400);
+            f.DebugCoopGrow(9, 8);
+            f.DebugFreezeCoopGrow(9, 0.5f);
+            Frame("B6_好感_增长_最小宽度", 80);
+            f.DebugClearGrow();
+
+            f.DebugSetup(0, true);
+            f.Size = new System.Drawing.Size(432, 520);
+            Pump(400);
+            f.DebugStatGrow(2, 9);
+            f.DebugFreezeStatGrow(2, 0.5f);
+            Frame("A6_五维_增长_最小宽度", 80);
+            f.DebugClearGrow();
             f.Close();
         }
 

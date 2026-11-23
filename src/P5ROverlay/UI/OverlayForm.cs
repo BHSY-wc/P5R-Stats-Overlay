@@ -2082,6 +2082,63 @@ namespace P5ROverlay
             Application.DoEvents();
         }
 
+        /// <summary>自检：在演示数据上给某一项五维加点数，触发增长动画（idx 是内存下标）。</summary>
+        public void DebugStatGrow(int idx, int amount)
+        {
+            if (_snap == null) return;
+            var snap = CloneSnap(_snap);
+            if (idx >= 0 && idx < snap.Stats.Length) snap.Stats[idx] = (short)(snap.Stats[idx] + amount);
+            ApplySnapshot(snap);
+            Invalidate(true);
+        }
+
+        /// <summary>自检：把某项五维的增长动画定格在某进度（0~1），逐帧截图用。</summary>
+        public void DebugFreezeStatGrow(int idx, float p)
+        {
+            _statPage.DebugFreezeGrow(idx, p);
+            Invalidate(true);
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：把某个角色好感增长动画定格，0 传 -1 之外的负数解冻请用 DebugClearGrow。</summary>
+        public void DebugFreezeCoopGrow(int cid, float p)
+        {
+            _coopPage.DebugFreezeGrow(cid, p);
+            Invalidate(true);
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：解除五维 / 好感两页的增长定格。</summary>
+        public void DebugClearGrow()
+        {
+            _statPage.DebugClearGrow();
+            _coopPage.DebugClearGrow();
+            Invalidate(true);
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：给某个角色的好感点数加分，触发好感页增长动画。</summary>
+        public void DebugCoopGrow(int cid, int amount)
+        {
+            if (_snap == null) return;
+            var snap = CloneSnap(_snap);
+            foreach (var c in snap.Coops) if (c.Id == cid) c.Points += amount;
+            ApplySnapshot(snap);
+            Invalidate(true);
+        }
+
+        private static Snapshot CloneSnap(Snapshot s)
+        {
+            var n = new Snapshot
+            {
+                Live = s.Live, Source = s.Source, SaveSlot = s.SaveSlot,
+                Stats = (short[])s.Stats.Clone(),
+                GameDayIdx = s.GameDayIdx, TimeZone = s.TimeZone,
+            };
+            foreach (var c in s.Coops) n.Coops.Add(new CoopEntry { Id = c.Id, Rank = c.Rank, Points = c.Points });
+            return n;
+        }
+
         /// <summary>自检：直接摆好日历页的状态（无游戏时截排版用）。</summary>
         public void DebugCalendar(int mode, int month, int day)
         {
