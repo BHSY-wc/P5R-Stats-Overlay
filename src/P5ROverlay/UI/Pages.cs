@@ -73,6 +73,31 @@ namespace P5ROverlay
         /// <summary>增长动画高亮色（新涨出来那一段 + 「+N」），设置页可改。</summary>
         public static Color GrowTint = DefGrowTint;
 
+        // ---- 两种「状态色」：满级（金）/ 可升级（蓝），设置页都能改 ----
+        // 只存一个基色，浅色（高光）、深色（底板 / 金字字色）都按基色推出来，
+        // 玩家换任何一种基色，整块牌子的配色都跟着走，不会出现「换了金块但字还是褐色」。
+
+        /// <summary>满级默认金：P5R 奖杯 / Rank 达成那种偏黄的旧金，不完全饱和，压黑底不刺眼。</summary>
+        public static readonly Color DefMaxTint = Color.FromArgb(226, 176, 64);
+
+        /// <summary>可升级默认蓝：P5R 菜单里的冷蓝，比绿色更贴整页的黑红金。</summary>
+        public static readonly Color DefReadyTint = Color.FromArgb(52, 140, 220);
+
+        /// <summary>满级基色（设置页可改）。</summary>
+        public static Color MaxTint = DefMaxTint;
+
+        /// <summary>可升级基色（设置页可改）。</summary>
+        public static Color ReadyTint = DefReadyTint;
+
+        /// <summary>满级金块的高光端（渐变亮端 / 描边）。</summary>
+        protected static Color MaxHot => P5R.Mix(MaxTint, Color.White, 0.34);
+        /// <summary>金块上的字与徽章底色：基色压到接近黑。</summary>
+        protected static Color MaxInk => P5R.Mix(MaxTint, P5R.Ink, 0.90);
+        /// <summary>可升级行的底板：基色压得很深，只留一点蓝味。</summary>
+        protected static Color ReadyDeep => P5R.Mix(ReadyTint, P5R.Ink, 0.86);
+        /// <summary>可升级行的条 / 状态字：基色提亮，深底上看得到。</summary>
+        protected static Color ReadyGlow => P5R.Mix(ReadyTint, Color.White, 0.55);
+
         /// <summary>从旧进度 fromRatio 起播一次增长动画；delta 是涨的点数（用来在条上方标数字）。</summary>
         protected void PlayGrow(int key, float fromRatio, int delta)
         {
@@ -297,12 +322,16 @@ namespace P5ROverlay
         /// 顶部一行「音符换算」提示：斜切黑条 + 左侧红块。
         /// 返回占用的高度（调用方据此把正文往下挪）。
         /// </summary>
-        protected int DrawNoteHint(Graphics g, string main, string suffix, float fs = 11.5f)
+        protected int DrawNoteHint(Graphics g, string main, string suffix, float fs = 11.5f, int coverTo = 0)
         {
             const int padX = 14;
             int h = (int)Math.Round(fs * 2.6f);        // 字号变高时横条一起长高，字不会被裁
-            var bar = new RectangleF(padX + 6, 4, Math.Max(60, Width - padX * 2 - 12), h - 10);
-            P5R.Slab(g, bar, Color.FromArgb(210, P5R.Ink), Color.FromArgb(50, P5R.Wire));
+            // coverTo > 0：把黑条一直铺到列表视口顶边，滚上来的行不会从提示条下面露半截
+            float barH = Math.Max(h - 10, coverTo - 4);
+            var bar = new RectangleF(padX + 6, 4, Math.Max(60, Width - padX * 2 - 12), barH);
+            // coverTo > 0 时要把滚上来的行挡干净，210 的半透明会让下面的字透出来，必须全不透明
+            P5R.Slab(g, bar, coverTo > 0 ? P5R.Ink : Color.FromArgb(210, P5R.Ink),
+                     Color.FromArgb(50, P5R.Wire));
             P5R.Slab(g, new RectangleF(padX + 8, 6, 4, h - 14), T.Accent);
 
             using (var f = P5R.F(fs, FontStyle.Bold))
@@ -314,7 +343,8 @@ namespace P5ROverlay
             })
             using (var b = new SolidBrush(Theme.Blend(T.Text, T.Bg, 0.10)))
             {
-                var box = new RectangleF(bar.X + 16, bar.Y, bar.Width - 24, bar.Height);
+                // 文字始终贴着条子的上段排，条子加高只往下长
+                var box = new RectangleF(bar.X + 16, bar.Y, bar.Width - 24, h - 10);
                 g.DrawString(main, f, b, box, sf);
                 if (!string.IsNullOrEmpty(suffix))
                 {
@@ -684,7 +714,7 @@ namespace P5ROverlay
                 {
                     using var lg = new LinearGradientBrush(
                         new RectangleF(block.X, block.Y, Math.Max(2f, block.Width), Math.Max(2f, block.Height)),
-                        P5R.GoldHot, P5R.Gold, 0f);
+                        MaxHot, MaxTint, 0f);
                     g.FillPath(lg, p);
                 }
                 else
@@ -694,12 +724,12 @@ namespace P5ROverlay
                         Color.FromArgb(232, P5R.Slate), Color.FromArgb(214, P5R.SlabLo), 0f);
                     g.FillPath(lg, p);
                 }
-                P5R.Stroke(g, p, max ? Color.FromArgb(170, 255, 236, 176) : Color.FromArgb(96, P5R.Wire), 1f);
+                P5R.Stroke(g, p, max ? Color.FromArgb(170, MaxHot) : Color.FromArgb(96, P5R.Wire), 1f);
             }
 
             // 左侧色条（P5R 的图标位）
             P5R.Slab(g, new RectangleF(block.X + 8, block.Y + 10, 4, Math.Min(24, block.Height - 20)),
-                     max ? P5R.GoldInk : T.Accent);
+                     max ? MaxInk : T.Accent);
 
             // --- 名称（字号已按 FontScale 放大）
             using (var f = P5R.F(Math.Min(FS(19f), Math.Min((block.Height * 0.34f + 6f) * FontScale,
@@ -707,7 +737,7 @@ namespace P5ROverlay
             {
                 P5R.Text(g, GameTables.StatNames[i], f,
                     new RectangleF(block.X + 20, block.Y + 2, Math.Min(160, block.Width * 0.46f), block.Height * 0.56f),
-                    max ? P5R.GoldInk : T.Text, StringAlignment.Near, StringAlignment.Center, -0.16f, !max);
+                    max ? MaxInk : T.Text, StringAlignment.Near, StringAlignment.Center, -0.16f, !max);
             }
 
             // --- 点数：平行四边形数值框（右端，P5R 的斜切标签）
@@ -715,16 +745,16 @@ namespace P5ROverlay
             var chip = new RectangleF(block.Right - chipW - 10, block.Y + 4, chipW, Math.Min(34f, block.Height * 0.46f));
             using (var f = P5R.F(Math.Min(FS(15f), chip.Height * 0.62f), FontStyle.Bold))
                 P5R.Chip(g, chip,
-                    max ? P5R.GoldInk : P5R.Paper,
-                    max ? Color.FromArgb(90, 255, 226, 140) : Color.FromArgb(96, P5R.Ink),
-                    shownPts.ToString(), max ? P5R.GoldHot : P5R.Ink, f);
+                    max ? MaxInk : P5R.Paper,
+                    max ? Color.FromArgb(90, MaxHot) : Color.FromArgb(96, P5R.Ink),
+                    shownPts.ToString(), max ? MaxHot : P5R.Ink, f);
 
             // --- 等级徽章
             float badgeH = Math.Min(24f, block.Height * 0.27f);
             var badge = new RectangleF(block.X + 20, block.Bottom - badgeH - 6, 50, badgeH);
-            P5R.Slab(g, badge, max ? P5R.GoldInk : T.Accent);
+            P5R.Slab(g, badge, max ? MaxInk : T.Accent);
             using (var f = P5R.F(Math.Max(11f, badgeH * 0.62f), FontStyle.Bold))
-                TextRenderer.DrawText(g, "Lv" + lv, f, Rectangle.Round(badge), max ? P5R.GoldHot : P5R.Paper,
+                TextRenderer.DrawText(g, "Lv" + lv, f, Rectangle.Round(badge), max ? MaxHot : P5R.Paper,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
@@ -735,8 +765,8 @@ namespace P5ROverlay
             if (barW > 24)
             {
                 bar = new RectangleF(barX, badge.Y + badge.Height * 0.5f - 3.5f, barW, 7);
-                DrawBar(g, bar, shownRatio, max ? P5R.GoldInk : T.Accent,
-                        max ? Color.FromArgb(90, 255, 232, 160) : Color.FromArgb(190, P5R.Ink),
+                DrawBar(g, bar, shownRatio, max ? MaxInk : T.Accent,
+                        max ? Color.FromArgb(90, MaxHot) : Color.FromArgb(190, P5R.Ink),
                         growDelta > 0 ? growFrom : -1, GrowTint);
             }
 
@@ -768,7 +798,7 @@ namespace P5ROverlay
                 if (growTag.Width > 0) return;
 
                 var boxNum = new RectangleF(numX, bar.Y - 24f, szN.Width + 2f, 20f);
-                P5R.Text(g, sNum, fNum, boxNum, max ? P5R.GoldInk : P5R.RedHot,
+                P5R.Text(g, sNum, fNum, boxNum, max ? MaxInk : P5R.RedHot,
                          StringAlignment.Near, StringAlignment.Center, -0.14f, true);
 
                 var boxRest = new RectangleF(boxNum.Right + gap, boxNum.Y,
@@ -802,6 +832,12 @@ namespace P5ROverlay
         private const int HeaderH = 26;
         private const int RowH = 52;
         private const int HintH = 30;
+
+        /// <summary>
+        /// 列表真正的顶边：提示条下面再留 6px。行装在这个「视口」里滚动，
+        /// 提示条本身不参与滚动 —— 之前两者共用一个偏移，键盘选到第一行时会把提示条顶掉。
+        /// </summary>
+        private int ViewTop => HintH + 6;
 
         public CoopPage()
         {
@@ -847,8 +883,27 @@ namespace P5ROverlay
             Invalidate();
         }
 
-        /// <summary>可滚动的最大偏移（内容 + 顶部提示条 - 可视高度）。</summary>
-        private int MaxScroll => Math.Max(0, HintH + ContentHeight - Height);
+        /// <summary>
+        /// 可滚动的最大偏移（内容高度 - 视口高度；提示条不参与滚动）。
+        /// 取「不小于理论最大值的最近一个行首」：滚到底时顶边正好卡在整行上，
+        /// 不会剩半行挂在提示条下面（底部最多多出一行的余白，当留白看即可）。
+        /// </summary>
+        private int MaxScroll
+        {
+            get
+            {
+                int raw = Math.Max(0, ContentHeight - (Height - ViewTop - 6));
+                if (raw <= 0) return 0;
+                int y = 0;
+                foreach (var r in _rows)
+                {
+                    int h = r.IsHeader ? HeaderH : RowH;
+                    if (y >= raw) return y;
+                    y += h;
+                }
+                return raw;
+            }
+        }
 
         private int ContentHeight
         {
@@ -932,7 +987,7 @@ namespace P5ROverlay
         // ------------------------------------------------------------ 小键盘导航
         private int RowTopOf(int index)
         {
-            int y = HintH + 8;
+            int y = ViewTop;
             for (int k = 0; k < index && k < _rows.Count; k++)
                 y += _rows[k].IsHeader ? HeaderH : RowH;
             return y;
@@ -943,7 +998,7 @@ namespace P5ROverlay
             if (index < 0 || index >= _rows.Count) return;
             int top = RowTopOf(index);
             int h = _rows[index].IsHeader ? HeaderH : RowH;
-            int viewTop = HintH + 4, viewBot = Height - 6;
+            int viewTop = ViewTop, viewBot = Height - 6;
             int screenTop = top - _scroll;
             if (screenTop < viewTop) _scroll = Math.Max(0, top - viewTop);
             else if (screenTop + h > viewBot) _scroll = Math.Min(MaxScroll, top + h - viewBot);
@@ -1018,7 +1073,7 @@ namespace P5ROverlay
 
             if (_rows.Count == 0)
             {
-                DrawNoteHint(g, "♪ = +5 点　♪♪ = +10 点　♪♪♪ = +15 点", "同塔罗 ×1.5");
+                DrawNoteHint(g, HintLine, HintSuffix, 11.5f, ViewTop);
                 using var f = P5R.F(13f, FontStyle.Bold);
                 P5R.Text(g, "还没读到 Coop 数据 —— 进入存档后会自动刷出（不用重启面板）", f,
                     new RectangleF(0, Height * 0.42f, Width, 40), Theme.Blend(T.Text, T.Bg, 0.35),
@@ -1027,24 +1082,26 @@ namespace P5ROverlay
                 return;
             }
 
-            DrawNoteHint(g, "♪ = +5 点　♪♪ = +10 点　♪♪♪ = +15 点", "同塔罗 ×1.5");
-
             int padX = 12;
-            int y = HintH + 8 - _scroll;
+            int y = ViewTop - _scroll;
             var focusRect = RectangleF.Empty;
+
+            // 行只画在提示条以下的视口里：滚到哪一行都不会盖住上面的换算提示
+            var oldClip = g.Clip;
+            g.SetClip(new Rectangle(0, ViewTop - 2, Width, Math.Max(0, Height - ViewTop + 2)));
 
             for (int ri = 0; ri < _rows.Count; ri++)
             {
                 var r = _rows[ri];
                 if (r.IsHeader)
                 {
-                    if (y + HeaderH > HintH && y < Height)
+                    if (y + HeaderH > ViewTop - 2 && y < Height)
                         DrawHeader(g, r, padX, y, Width - padX * 2);
                     y += HeaderH;
                     continue;
                 }
 
-                if (y + RowH > HintH && y < Height)
+                if (y + RowH > ViewTop - 2 && y < Height)
                 {
                     DrawRow(g, r, padX, y, Width - padX * 2);
                     if (ri == _navSel)
@@ -1054,15 +1111,17 @@ namespace P5ROverlay
             }
 
             if (!Detail.IsOpen && focusRect.Width > 0) DrawNavFocus(g, focusRect);
+            g.Clip = oldClip;
 
-            // 滚动条（P5R 那种白色竖条）
+            // 滚动条（P5R 那种白色竖条）：只覆盖列表这段视口，不压提示条
             if (MaxScroll > 0)
             {
-                int trackTop = HintH + 6, trackH = Height - HintH - 16;
+                int trackTop = ViewTop, trackH = Height - ViewTop - 8;
                 if (trackH > 20)
                 {
-                    int total = HintH + ContentHeight;
-                    int thumbH = Math.Max(28, (int)((double)Height / total * trackH));
+                    int total = ContentHeight;
+                    int view = Math.Max(1, Height - ViewTop - 6);
+                    int thumbH = Math.Max(28, (int)((double)view / total * trackH));
                     int thumbY = trackTop + (int)((double)_scroll / MaxScroll * (trackH - thumbH));
                     var tb = new RectangleF(Width - 9, thumbY, 4, thumbH);
                     using var p = P5R.Skew(tb, -2f);
@@ -1070,8 +1129,16 @@ namespace P5ROverlay
                 }
             }
 
+            // 提示条最后画，永远压在列表之上。
+            // 先把这条带子按背景色铺平：斜切黑条左右两头压不满，缝里会漏出滚过去的行
+            using (var bg = new SolidBrush(T.Bg)) g.FillRectangle(bg, 0, 0, Width, ViewTop);
+            DrawNoteHint(g, HintLine, HintSuffix, 11.5f, ViewTop);
+
             PaintDetail(g);
         }
+
+        private const string HintLine = "♪ = +5 点　♪♪ = +10 点　♪♪♪ = +15 点";
+        private const string HintSuffix = "同塔罗面具 ×1.5";
 
         private void DrawHeader(Graphics g, CoopRow r, int x, int y, int w)
         {
@@ -1105,10 +1172,15 @@ namespace P5ROverlay
                 Id = r.Id, Rank = r.Rank, Name = r.Name, Arcana = r.Arcana,
             });
 
-            // 底板：满级金 / 可升级绿 / 普通深灰
+            // 底板：满级金 / 可升级蓝 / 普通深灰
             Color fillTop, fillBot, edge;
-            if (max) { fillTop = P5R.GoldHot; fillBot = P5R.Gold; edge = Color.FromArgb(170, 255, 236, 176); }
-            else if (ready) { fillTop = Color.FromArgb(24, 46, 40); fillBot = Color.FromArgb(15, 31, 27); edge = Color.FromArgb(150, 96, 226, 176); }
+            if (max) { fillTop = MaxHot; fillBot = MaxTint; edge = Color.FromArgb(170, MaxHot); }
+            else if (ready)
+            {
+                fillTop = P5R.Mix(ReadyTint, P5R.Ink, 0.80);
+                fillBot = ReadyDeep;
+                edge = Color.FromArgb(150, ReadyGlow);
+            }
             else { fillTop = Color.FromArgb(230, P5R.Slate); fillBot = Color.FromArgb(210, P5R.SlabLo); edge = Color.FromArgb(92, P5R.Wire); }
 
             using (var p = P5R.Skew(block))
@@ -1120,7 +1192,7 @@ namespace P5ROverlay
                 P5R.Stroke(g, p, edge, 1f);
             }
             P5R.Slab(g, new RectangleF(block.X + 8, block.Y + 8, 4, block.Height - 16),
-                     max ? P5R.GoldInk : (ready ? Color.FromArgb(120, 240, 184) : T.Accent));
+                     max ? MaxInk : (ready ? Color.FromArgb(190, ReadyGlow) : T.Accent));
 
             int innerX = (int)block.X + 20;
             int rowW = (int)block.Width - 32;
@@ -1128,21 +1200,21 @@ namespace P5ROverlay
             // 名称
             using (var f = P5R.F(13.5f, FontStyle.Bold))
                 TextRenderer.DrawText(g, r.Name, f, new Rectangle(innerX, (int)block.Y + 4, 108, 20),
-                    max ? P5R.GoldInk : T.Text,
+                    max ? MaxInk : T.Text,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding |
                     TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
 
             // 塔罗：金底上换成深褐加粗，原来的半透明灰在金底上会糊掉
             using (var f = P5R.F(max ? 12f : 11f, max ? FontStyle.Bold : FontStyle.Regular))
                 TextRenderer.DrawText(g, r.Arcana, f, new Rectangle(innerX + 110, (int)block.Y + 4, 58, 20),
-                    max ? Theme.Blend(P5R.GoldInk, P5R.Gold, 0.06) : Theme.Blend(T.Text, T.Bg, 0.45),
+                    max ? MaxInk : Theme.Blend(T.Text, T.Bg, 0.45),
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
             // R 徽章
             var rb = new RectangleF(innerX + 168, block.Y + 5, 34, 18);
-            P5R.Slab(g, rb, max ? P5R.GoldInk : T.Accent);
+            P5R.Slab(g, rb, max ? MaxInk : T.Accent);
             using (var f = P5R.F(11f, FontStyle.Bold))
-                TextRenderer.DrawText(g, "R" + r.Rank, f, Rectangle.Round(rb), max ? P5R.GoldHot : P5R.Paper,
+                TextRenderer.DrawText(g, "R" + r.Rank, f, Rectangle.Round(rb), max ? MaxHot : P5R.Paper,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
 
             // 数值平行四边形框（第一行右端）
@@ -1151,9 +1223,9 @@ namespace P5ROverlay
             var chip = new RectangleF(block.Right - chipW - 10, block.Y + 5, chipW, 20);
             using (var f = P5R.F(11.5f, FontStyle.Bold))
                 P5R.Chip(g, chip,
-                    max ? P5R.GoldInk : P5R.Paper,
-                    max ? Color.FromArgb(90, 255, 226, 140) : Color.FromArgb(96, P5R.Ink),
-                    num, max ? P5R.GoldHot : P5R.Ink, f);
+                    max ? MaxInk : P5R.Paper,
+                    max ? Color.FromArgb(90, MaxHot) : Color.FromArgb(96, P5R.Ink),
+                    num, max ? MaxHot : P5R.Ink, f);
 
             // --- R当前 → 还差N → R下一级（紧跟在 R 徽章后面，一块斜切标签）
             //     「还差 N」白字；「»R 下一级」黑底绿字，和「可以升级」组里的写法一致
@@ -1182,7 +1254,7 @@ namespace P5ROverlay
                     {
                         P5R.Slab(g, cb, Color.FromArgb(215, P5R.Ink), Color.FromArgb(84, P5R.Wire));
 
-                        var green = Color.FromArgb(150, 240, 184);
+                        var green = ready ? Color.FromArgb(220, ReadyGlow) : Color.FromArgb(150, 240, 184);
                         float tx = cb.X + padL;
                         if (sGap.Length > 0)
                         {
@@ -1208,11 +1280,11 @@ namespace P5ROverlay
             // 第二行：进度条 + 状态
             double ratio;
             Color barFill;
-            if (max) { ratio = 1.0; barFill = P5R.GoldInk; }
+            if (max) { ratio = 1.0; barFill = MaxInk; }
             else if (r.Need.HasValue && r.Need.Value > 0)
             {
                 ratio = (double)r.Points / r.Need.Value;
-                barFill = ready ? Color.FromArgb(126, 236, 178) : T.Accent;
+                barFill = ready ? ReadyGlow : T.Accent;
             }
             else { ratio = 0; barFill = Theme.Blend(T.Text, T.Bg, 0.5); }
 
@@ -1224,7 +1296,7 @@ namespace P5ROverlay
             var bar = new RectangleF(innerX, block.Bottom - 11,
                                      Math.Max(40f, showState ? rowW - 120 : rowW - 10), 6);
             DrawBar(g, bar, shown, barFill,
-                    max ? Color.FromArgb(95, 255, 232, 160) : Color.FromArgb(190, P5R.Ink),
+                    max ? Color.FromArgb(95, MaxHot) : Color.FromArgb(190, P5R.Ink),
                     growDelta > 0 ? growFrom : -1, GrowTint);
 
             if (growDelta > 0)
@@ -1237,8 +1309,8 @@ namespace P5ROverlay
                                     max || ready ? FontStyle.Bold : FontStyle.Regular);
                 TextRenderer.DrawText(g, r.State, f,
                     new Rectangle((int)bar.Right + 8, (int)bar.Y - 8, Math.Max(30, (int)(block.Right - bar.Right - 18)), 20),
-                    max ? P5R.GoldInk
-                        : (ready ? Color.FromArgb(170, 255, 216) : Theme.Blend(T.Text, T.Bg, 0.40)),
+                    max ? MaxInk
+                        : (ready ? Color.FromArgb(200, ReadyGlow) : Theme.Blend(T.Text, T.Bg, 0.40)),
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding |
                     TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
             }

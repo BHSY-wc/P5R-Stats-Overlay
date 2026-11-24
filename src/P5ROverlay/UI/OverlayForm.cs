@@ -89,6 +89,11 @@ namespace P5ROverlay
         private Label[] _growSw;
         private Label _btnCustomGrow;
 
+        // 状态色（满级金 / 可升级蓝）—— 和上面几组颜色一样：色板第一位就是我们的默认色
+        private Label _capMaxColor, _capReadyColor;
+        private Label[] _maxSw, _readySw;
+        private Label _btnCustomMax, _btnCustomReady;
+
         // ---- 热键
         private const int HK_TOGGLE = 1, HK_EXPAND = 2, HK_PREV = 3, HK_NEXT = 4, HK_PASS = 5, HK_REFRESH = 6;
 
@@ -333,6 +338,32 @@ namespace P5ROverlay
             Color.FromArgb(255, 255, 255),
         };
 
+        // 满级金 / 可升级蓝：色板第一个固定是我们的默认色，调坏了点回第一格就行。
+        // 后面几格是换得动整块牌子（底板、徽章、条）的同族色，按「深 → 浅 / 冷 → 暖」排。
+        private static readonly Color[] MaxPalette =
+        {
+            PageBase.DefMaxTint,
+            Color.FromArgb(208, 154, 44),      // 旧金，更沉
+            Color.FromArgb(244, 214, 132),     // 香槟金
+            Color.FromArgb(232, 128, 64),      // 铜橙
+            Color.FromArgb(214, 92, 132),      // 玫红
+            Color.FromArgb(150, 118, 232),     // 紫
+            Color.FromArgb(96, 194, 214),      // 青
+            Color.FromArgb(206, 210, 220),     // 银
+        };
+
+        private static readonly Color[] ReadyPalette =
+        {
+            PageBase.DefReadyTint,
+            Color.FromArgb(34, 168, 196),      // 青
+            Color.FromArgb(92, 178, 255),      // 亮蓝
+            Color.FromArgb(110, 196, 156),     // 绿（沿用换色前的习惯）
+            Color.FromArgb(156, 126, 232),     // 紫
+            Color.FromArgb(232, 132, 96),      // 橙
+            Color.FromArgb(226, 96, 150),      // 玫红
+            Color.FromArgb(206, 210, 220),     // 银
+        };
+
         private void BuildSettingsPanel()
         {
             // 自绘滚动条：系统的白条子跟整页配色打架，见 ScrollHost
@@ -352,6 +383,8 @@ namespace P5ROverlay
             _capRefresh = MakeCap("刷新频率");
             _capAnim = MakeCap("涨点动画时长");
             _capGrowColor = MakeCap("涨点高亮色");
+            _capMaxColor = MakeCap("满级金色");
+            _capReadyColor = MakeCap("可升级蓝色");
             _capKeys = MakeCap("快捷键");
             _capNav = MakeCap("小键盘导航（仅展开且可交互时接管）");
 
@@ -455,6 +488,14 @@ namespace P5ROverlay
             _btnCustomGrow = MakeSmallButton("自定义…",
                 () => PickColor(PageBase.GrowTint, c => { PageBase.GrowTint = c; }));
 
+            // 状态色：改完下一帧就重画（ApplyTheme → Invalidate），ini 里存 MaxColor / ReadyColor
+            _maxSw = MakeSwatches(MaxPalette, c => { PageBase.MaxTint = c; });
+            _readySw = MakeSwatches(ReadyPalette, c => { PageBase.ReadyTint = c; });
+            _btnCustomMax = MakeSmallButton("自定义…",
+                () => PickColor(PageBase.MaxTint, c => { PageBase.MaxTint = c; }));
+            _btnCustomReady = MakeSmallButton("自定义…",
+                () => PickColor(PageBase.ReadyTint, c => { PageBase.ReadyTint = c; }));
+
             foreach (var slot in _slots)
             {
                 var s = slot;
@@ -534,13 +575,15 @@ namespace P5ROverlay
                 _capRefresh, _hintFreq,
                 _capAnim, _growBar, _growVal,
                 _capGrowColor, _btnCustomGrow,
+                _capMaxColor, _btnCustomMax,
+                _capReadyColor, _btnCustomReady,
                 _capKeys, _capNav,
                 _capPreview, _preview, _tipLabel,
                 _verLabel, _byLabel,
             });
             _settings.Content.Controls.AddRange(_refreshBtns);
             foreach (var slot in _slots) { _settings.Content.Controls.Add(slot.Cap); _settings.Content.Controls.Add(slot.Btn); }
-            foreach (var arr in new[] { _bgSw, _fgSw, _acSw, _growSw })
+            foreach (var arr in new[] { _bgSw, _fgSw, _acSw, _growSw, _maxSw, _readySw })
                 foreach (var s in arr) _settings.Content.Controls.Add(s);
         }
 
@@ -615,6 +658,8 @@ namespace P5ROverlay
 
             // 涨点动画一并回默认（同一页的「外观」里，用户按一次恢复就该全回去）
             PageBase.GrowTint = PageBase.DefGrowTint;
+            PageBase.MaxTint = PageBase.DefMaxTint;
+            PageBase.ReadyTint = PageBase.DefReadyTint;
             if (_growBar != null) _growBar.Value = PageBase.DefGrowMs;   // 触发 ValueChanged → GrowMs 同步
             if (_growVal != null) _growVal.Text = GrowMsText(PageBase.GrowMs);
             _statPage?.Invalidate();
@@ -723,6 +768,8 @@ namespace P5ROverlay
             MarkSwatches(_fgSw, FgPalette, _cText);
             MarkSwatches(_acSw, AccentPalette, _cAccent);
             MarkSwatches(_growSw, GrowPalette, PageBase.GrowTint);
+            MarkSwatches(_maxSw, MaxPalette, PageBase.MaxTint);
+            MarkSwatches(_readySw, ReadyPalette, PageBase.ReadyTint);
         }
 
         private static void MarkSwatches(Label[] sw, Color[] pal, Color cur)
@@ -877,6 +924,8 @@ namespace P5ROverlay
             y += gh + 2;
 
             LayoutRow(_capGrowColor, _growSw, _btnCustomGrow, ref y, w, capW, colX);
+            LayoutRow(_capMaxColor, _maxSw, _btnCustomMax, ref y, w, capW, colX);
+            LayoutRow(_capReadyColor, _readySw, _btnCustomReady, ref y, w, capW, colX);
 
             // 快捷键：两列，先全局热键，再小键盘导航（都能改键）
             _capKeys.SetBounds(4, y, capW, 20);
@@ -2055,10 +2104,10 @@ namespace P5ROverlay
                 rows.AddRange(list);
             }
 
-            AddGroup("可以升级", Color.FromArgb(110, 220, 140), ready);
+            AddGroup("可以升级", P5R.Mix(PageBase.ReadyTint, Color.White, 0.32), ready);
             AddGroup("继续积累", Color.FromArgb(240, 196, 96), accum);
             AddGroup("不看点数（任务 / 剧情 / 人格指数）", Color.FromArgb(150, 158, 170), special);
-            AddGroup("已满级", Color.FromArgb(234, 190, 76), maxed);
+            AddGroup("已满级", P5R.Mix(PageBase.MaxTint, Color.White, 0.22), maxed);
             return rows;
         }
 
@@ -2170,6 +2219,8 @@ namespace P5ROverlay
                                     PageBase.GrowMs = Math.Max(200, Math.Min(2000, gm));
                                 break;
                             case "GrowColor": PageBase.GrowTint = ParseCol(val, PageBase.GrowTint); break;
+                            case "MaxColor": PageBase.MaxTint = ParseCol(val, PageBase.MaxTint); break;
+                            case "ReadyColor": PageBase.ReadyTint = ParseCol(val, PageBase.ReadyTint); break;
                             default:
                                 var slot = _slots.FirstOrDefault(s => s.IniKey == key);
                                 if (slot != null && ParseHotkey(val, out uint hm, out uint hv, out string ht))
@@ -2224,6 +2275,8 @@ namespace P5ROverlay
                 sb.AppendLine("RefreshSec=" + _refreshSec);
                 sb.AppendLine("GrowMs=" + PageBase.GrowMs);
                 sb.AppendLine("GrowColor=" + ColToStr(PageBase.GrowTint));
+                sb.AppendLine("MaxColor=" + ColToStr(PageBase.MaxTint));
+                sb.AppendLine("ReadyColor=" + ColToStr(PageBase.ReadyTint));
                 foreach (var s in _slots) sb.AppendLine(s.IniKey + "=" + s.Text);
                 File.WriteAllText(SettingsPath, sb.ToString());
             }
@@ -2553,6 +2606,10 @@ namespace P5ROverlay
         {
             try
             {
+                // 先整窗重画一遍：PrintWindow 只拿窗口自己画过的东西，
+                // 刚改过尺寸 / 滚动时子控件可能只重画了一部分，会留下上一帧的残影
+                Refresh();
+                Application.DoEvents();
                 // 用 PrintWindow 直接渲染窗口自身，避免屏幕抓取受位置 / 遮挡 / 缩放影响
                 using var bmp = new Bitmap(Width, Height);
                 using (var g = Graphics.FromImage(bmp))

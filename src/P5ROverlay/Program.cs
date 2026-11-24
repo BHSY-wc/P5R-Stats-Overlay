@@ -556,6 +556,13 @@ namespace P5ROverlay
             f.Size = new System.Drawing.Size(600, 660);
             Pump(300);
 
+            // 键盘一路向上：光标停在第一行时，上面的「♪ 换算」提示条不能被列表顶掉
+            Console.WriteLine("[selftest] 上移前 " + f.DebugNavState());
+            for (int i = 0; i < 40; i++) f.DebugNav(0);
+            Console.WriteLine("[selftest] 上移后 " + f.DebugNavState());
+            Pump(400);
+            f.ShotTo(Path.Combine(outDir, "2m_好感_上移到底.png"));
+
             // 日志超出一屏：自绘滚动条应出现在右侧，并且已经滚到底
             f.DebugSetup(4, true);
             f.DebugFillLog(60);
