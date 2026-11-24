@@ -106,6 +106,11 @@ namespace P5ROverlay
             public bool LoveMust;// 恋人确认项（选错就断在友人线）
             public bool Growth;  // 升级事件后拿到的五维点数
             public bool Daily;   // 特定日期 / 日常活动的五维，排在表尾
+            public bool Info;    // 作息页：一行「标签 + 正文」
+            public bool Place;   // 景点页：景点标题行
+            public bool Best;    // 景点页：该景点好感最高的选项
+            public bool Indent;  // 景点页：选项缩进，和景点标题分开层次
+            public string Badge;// 徽章上的字；空 = 按类型自动算
             public float NameH;  // 布局时算出的单行/多行名称高度
             public float DescH;  // 布局时算出的描述高度
         }
@@ -118,10 +123,12 @@ namespace P5ROverlay
         private bool _statMode;
         private int _cur;
 
-        // ---- 好感页的「能力 / 礼物」两页
+        // ---- 好感页的四页：能力 / 礼物 / 作息 / 景点（按钮两行，上排能力·礼物，下排作息·景点）
         private int _coopId;
-        private int _tab;                       // 0 = 能力，1 = 礼物
-        private RectangleF _btnAb, _btnGift;
+        private int _tab;                       // 0 能力，1 礼物，2 作息，3 景点
+        private RectangleF _btnAb, _btnGift, _btnRoutine, _btnSpot;
+
+        private static readonly string[] TabNames = { "能力", "礼物", "作息", "景点" };
 
         private readonly List<Row> _rows = new List<Row>();
         private readonly List<float> _h = new List<float>();
@@ -258,8 +265,105 @@ namespace P5ROverlay
         {
             if (_statMode || t == _tab) return;
             _tab = t;
-            if (t == 0) BuildAbilityRows(); else BuildGiftRows();
+            switch (t)
+            {
+                case 1: BuildGiftRows(); break;
+                case 2: BuildRoutineRows(); break;
+                case 3: BuildSpotRows(); break;
+                default: BuildAbilityRows(); break;
+            }
             Reset();
+        }
+
+        /// <summary>作息页：什么时候、在哪、什么天气能触发（wiki「事件基础信息」表）。</summary>
+        private void BuildRoutineRows()
+        {
+            _rows.Clear();
+            foreach (var it in CoopExtra.Info(_coopId))
+                _rows.Add(new Row
+                {
+                    Lv = 0,
+                    Name = it.Value,
+                    Desc = "",
+                    On = true,
+                    Info = true,
+                    Badge = it.Label,
+                });
+            _empty = _rows.Count == 0
+                ? "wiki 这个角色的页面没有收录「事件基础信息」"
+                : "";
+        }
+
+        /// <summary>景点页：约会地点 + 每个选项的好感变化（wiki「景点事件」表）。</summary>
+        private void BuildSpotRows()
+        {
+            _rows.Clear();
+            var sp = CoopExtra.Spots(_coopId);
+
+            string curPlace = null, common = "";
+            for (int i = 0; i < sp.Length; i++)
+            {
+                string place = ShortPlace(sp[i].Place);
+                bool head = place != curPlace;
+                if (head)
+                {
+                    curPlace = place;
+                    // 同一景点的备注全都一样时，只写在标题行，选项行就不用重复三遍
+                    common = CommonNote(sp, i, place);
+                }
+
+                if (head)
+                    _rows.Add(new Row
+                    {
+                        Lv = 0,
+                        Name = place,
+                        Desc = common,
+                        On = true,
+                        Place = true,
+                        Badge = sp[i].Place.StartsWith("通用") ? "通用" : "景点",
+                    });
+
+                string opt = sp[i].Option;
+                if (opt.Length == 0 || opt == "－" || opt == "-") continue;   // 没有选项的分支不单列
+
+                string note = sp[i].Note;
+                if (note == "-" || note == "－") note = "";
+                if (note == common) note = "";
+
+                _rows.Add(new Row
+                {
+                    Lv = 0,
+                    Name = opt,
+                    Desc = note,
+                    On = true,
+                    Best = sp[i].Best,
+                    Indent = true,
+                    Badge = sp[i].Gain,
+                });
+            }
+
+            _empty = sp.Length == 0 ? "这个 Coop 没有景点约会" : "";
+        }
+
+        private static string ShortPlace(string p)
+        {
+            if (p.StartsWith("通用景点：")) p = p.Substring(5);
+            else if (p.StartsWith("景点：")) p = p.Substring(3);
+            return p;
+        }
+
+        /// <summary>该景点所有行的备注完全一致时返回它，否则返回空（备注各不相同就逐行显示）。</summary>
+        private static string CommonNote(CoopExtra.Spot[] sp, int from, string place)
+        {
+            string note = null;
+            for (int i = from; i < sp.Length && ShortPlace(sp[i].Place) == place; i++)
+            {
+                string n = sp[i].Note;
+                if (n == "-" || n == "－") n = "";
+                if (note == null) note = n;
+                else if (note != n) return "";
+            }
+            return note ?? "";
         }
 
         /// <summary>自检钩子：切到指定页（0 能力 / 1 礼物）。</summary>
@@ -300,6 +404,8 @@ namespace P5ROverlay
             {
                 if (_btnAb.Contains(p)) { SetTab(0); return true; }
                 if (_btnGift.Contains(p)) { SetTab(1); return true; }
+                if (_btnRoutine.Contains(p)) { SetTab(2); return true; }
+                if (_btnSpot.Contains(p)) { SetTab(3); return true; }
             }
 
             if (_closeRect.Contains(p)) { Close(); return true; }
@@ -315,12 +421,12 @@ namespace P5ROverlay
             ClampScroll();
         }
 
-        /// <summary>小键盘 4/6：在「能力 / 礼物」两页之间切；五维弹层没有页签，返回 false。</summary>
+        /// <summary>小键盘 4/6：在「能力 / 礼物 / 作息 / 景点」四页之间切；五维弹层没有页签，返回 false。</summary>
         public bool NextTab(int dir)
         {
             if (!IsOpen || _statMode) return false;
             int t = _tab + dir;
-            if (t < 0 || t > 1) return false;
+            if (t < 0 || t > 3) return false;
             SetTab(t);
             return true;
         }
@@ -339,15 +445,23 @@ namespace P5ROverlay
         {
             if (!IsOpen) return "弹层未打开";
             if (which == "state")
-                return $"打开={IsOpen} 当前页={(_tab == 0 ? "能力" : "礼物")} 行数={_rows.Count}" +
-                       $" 页签=({_btnAb.X:0},{_btnAb.Y:0},{_btnAb.Width:0}x{_btnAb.Height:0})/({_btnGift.X:0},{_btnGift.Y:0})";
+                return $"打开={IsOpen} 当前页={TabNames[_tab]} 行数={_rows.Count}" +
+                       $" 页签=({_btnAb.X:0},{_btnAb.Y:0},{_btnAb.Width:0}x{_btnAb.Height:0})/" +
+                       $"({_btnGift.X:0},{_btnGift.Y:0})/({_btnRoutine.X:0},{_btnRoutine.Y:0})/({_btnSpot.X:0},{_btnSpot.Y:0})";
 
-            var r = which == "gift" ? _btnGift : _btnAb;
+            RectangleF r;
+            switch (which)
+            {
+                case "gift": r = _btnGift; break;
+                case "routine": r = _btnRoutine; break;
+                case "spot": r = _btnSpot; break;
+                default: r = _btnAb; break;
+            }
             if (r.Width <= 0 || r.Height <= 0) return "页签矩形还没算出来（没画过）";
 
             var p = Point.Round(new PointF(r.X + r.Width / 2f, r.Y + r.Height / 2f));
             bool hit = MouseDown(p);
-            return $"{(hit ? "已消费" : "未消费")} x={p.X} y={p.Y} → 仍打开={IsOpen} 当前页={(_tab == 0 ? "能力" : "礼物")}";
+            return $"{(hit ? "已消费" : "未消费")} x={p.X} y={p.Y} → 仍打开={IsOpen} 当前页={TabNames[_tab]}";
         }
 
         private void ClampScroll()
@@ -381,7 +495,7 @@ namespace P5ROverlay
 
             DrawHead(g, T);
 
-            int headH = 56, footH = 22;
+            int headH = _statMode ? 56 : 80, footH = 22;
             _listArea = new Rectangle(_panel.X + 2, _panel.Y + headH,
                                       _panel.Width - 4, _panel.Height - headH - footH);
             if (_listArea.Height < 40) { IsOpen = false; return; }
@@ -412,8 +526,15 @@ namespace P5ROverlay
 
             DrawScroll(g, T);
 
+            // 页脚压一条底色：列表最后一行文字不会和提示糊在一起
+            using (var b = new SolidBrush(Theme.Blend(T.Bg, P5R.Ink, 0.9)))
+                g.FillRectangle(b, _panel.X + 1, _panel.Bottom - footH, _panel.Width - 2, footH - 1);
+            using (var pen = new Pen(Color.FromArgb(50, P5R.Wire)))
+                g.DrawLine(pen, _panel.X + 8, _panel.Bottom - footH, _panel.Right - 8, _panel.Bottom - footH);
+
             using (var f = P5R.F(10f))
-                TextRenderer.DrawText(g, "滚轮滚动　·　点空白处关闭",
+                TextRenderer.DrawText(g, _statMode ? "滚轮滚动　·　点空白处关闭"
+                                                   : "滚轮滚动　·　4/6 切页　·　点空白处关闭",
                     f, new Rectangle(_panel.X + 14, _panel.Bottom - footH + 3, _panel.Width - 28, footH - 4),
                     Theme.Blend(T.Text, T.Bg, 0.52),
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
@@ -421,21 +542,23 @@ namespace P5ROverlay
 
         private void DrawHead(Graphics g, Theme T)
         {
-            var head = new RectangleF(_panel.X, _panel.Y, _panel.Width, 56);
+            // 好感页有四个页签（两行两列），出血条要高一些才装得下
+            float bandH = _statMode ? 50f : 74f;
+            var head = new RectangleF(_panel.X, _panel.Y, _panel.Width, bandH + 6f);
 
             // 出血红斜条
-            using (var p = P5R.Skew(new RectangleF(head.X, head.Y, head.Width, 50), -18f))
+            using (var p = P5R.Skew(new RectangleF(head.X, head.Y, head.Width, bandH), -18f))
             {
                 using var lg = new LinearGradientBrush(
-                    new RectangleF(head.X, head.Y, Math.Max(2f, head.Width), 50f),
+                    new RectangleF(head.X, head.Y, Math.Max(2f, head.Width), bandH),
                     P5R.RedHot, P5R.Red, 0f);
                 g.FillPath(lg, p);
             }
-            P5R.Halftone(g, new RectangleF(head.X, head.Y, head.Width, 50), Color.FromArgb(40, Color.White), 6, 1.1f);
+            P5R.Halftone(g, new RectangleF(head.X, head.Y, head.Width, bandH), Color.FromArgb(40, Color.White), 6, 1.1f);
 
             // 页签宽度跟着面板走：窄到 MinimumSize 时也得给标题留出字位
             float tabW = _panel.Width >= 420f ? 66f : 52f;
-            float tabSpace = _statMode ? 0f : tabW * 2f + 16f;   // 右上角两个页签占位
+            float tabSpace = _statMode ? 0f : tabW * 2f + 6f + 16f;   // 右上角两列页签占位
 
             // 标题可用宽度 = 面板宽 − 左缩进 − ✕/页签占位 − 右留白
             float titleMaxW = _panel.Width - 24f - (34f + 12f + tabSpace + 14f);
@@ -456,20 +579,32 @@ namespace P5ROverlay
                 P5R.Text(g, _title, titleFont, new RectangleF(head.X + 20, head.Y + 3, titleMaxW, 44),
                     P5R.Paper, StringAlignment.Near, StringAlignment.Center, -0.16f, true);
 
-            // 副标题（阿卡纳 · Rank）：靠右贴页签放，与标题之间留够间距，挤不下就不画
+            // 副标题（阿卡纳 · Rank）：好感页放到标题下方，五维页靠右贴页签
             if (_sub.Length > 0)
             {
                 using var f2 = P5R.F(10.5f + (S - 1f) * 4f, FontStyle.Bold);
                 float sw = TextRenderer.MeasureText(g, _sub, f2, new Size(1000, 100),
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
-                float sx = _panel.Right - 46f - tabSpace - sw - 4f;   // 右对齐到 ✕ 左侧
-                // P5R.Text 带斜切，实际占位比 MeasureString 宽一点，多留 8%
-                float titleRight = head.X + 24 + titleW * 1.08f;
-                if (sx > titleRight + 10f)
-                    TextRenderer.DrawText(g, _sub, f2,
-                        new Rectangle((int)sx, _panel.Y + 16, (int)(sw + 4f), 20), Color.FromArgb(236, 232, 228),
-                        TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding |
-                        TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                if (_statMode)
+                {
+                    float sx = _panel.Right - 46f - sw - 4f;   // 右对齐到 ✕ 左侧
+                    float titleRight = head.X + 24 + titleW * 1.08f;
+                    if (sx > titleRight + 10f)
+                        TextRenderer.DrawText(g, _sub, f2,
+                            new Rectangle((int)sx, _panel.Y + 16, (int)(sw + 4f), 20), Color.FromArgb(236, 232, 228),
+                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding |
+                            TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                }
+                else
+                {
+                    float room = _panel.Width - 40f - tabSpace;
+                    if (room > 40f)
+                        TextRenderer.DrawText(g, _sub, f2,
+                            new Rectangle((int)(head.X + 22), (int)(head.Y + 46), (int)Math.Min(room, sw + 6f), 18),
+                            Color.FromArgb(236, 232, 228),
+                            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding |
+                            TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+                }
             }
 
             // 关闭
@@ -482,20 +617,29 @@ namespace P5ROverlay
                 g.DrawLine(pen, _closeRect.Right - 6, _closeRect.Y + 6, _closeRect.X + 6, _closeRect.Bottom - 6);
             }
 
-            // 能力 / 礼物 两个页签（只有好感页有）
+            // 四个页签：上排「能力 · 礼物」，下排「作息 · 景点」（只有好感页有）
             if (!_statMode)
             {
-                float th = 26f, gap = 6f;
-                _btnGift = new RectangleF(_closeRect.X - 12 - tabW, _panel.Y + 11, tabW, th);
-                _btnAb = new RectangleF(_btnGift.X - gap - tabW, _panel.Y + 11, tabW, th);
-                DrawTab(g, T, _btnAb, "能力", _tab == 0);
-                DrawTab(g, T, _btnGift, "礼物", _tab == 1);
+                float th = 26f, gap = 6f, vgap = 5f;
+                float x2 = _closeRect.X - 12 - tabW;          // 右列
+                float x1 = x2 - gap - tabW;                    // 左列
+                float y1 = _panel.Y + 8, y2 = y1 + th + vgap;
+
+                _btnGift    = new RectangleF(x2, y1, tabW, th);
+                _btnAb      = new RectangleF(x1, y1, tabW, th);
+                _btnSpot    = new RectangleF(x2, y2, tabW, th);
+                _btnRoutine = new RectangleF(x1, y2, tabW, th);
+
+                DrawTab(g, T, _btnAb, TabNames[0], _tab == 0);
+                DrawTab(g, T, _btnGift, TabNames[1], _tab == 1);
+                DrawTab(g, T, _btnRoutine, TabNames[2], _tab == 2);
+                DrawTab(g, T, _btnSpot, TabNames[3], _tab == 3);
             }
-            else _btnAb = _btnGift = RectangleF.Empty;
+            else _btnAb = _btnGift = _btnRoutine = _btnSpot = RectangleF.Empty;
 
             // 分隔线
             using (var pen = new Pen(Color.FromArgb(70, T.Accent), 2f))
-                g.DrawLine(pen, _panel.X + 8, _panel.Y + 52, _panel.Right - 8, _panel.Y + 52);
+                g.DrawLine(pen, _panel.X + 8, _panel.Y + bandH + 2, _panel.Right - 8, _panel.Y + bandH + 2);
         }
 
         private static void DrawTab(Graphics g, Theme T, RectangleF r, string text, bool active)
@@ -552,19 +696,27 @@ namespace P5ROverlay
         {
             bool on = r.On;
 
+            // 景点页的选项往右缩一点，和景点标题拉出层次
+            float ox = r.Indent ? 14f * S : 0f;
+
             // 左侧状态竖条
-            var tick = new RectangleF(x, y + 5 * S, Math.Max(4f, 3f * S), Math.Max(6f, h - 10 * S));
+            var tick = new RectangleF(x + ox, y + 5 * S, Math.Max(4f, 3f * S), Math.Max(6f, h - 10 * S));
             if (h > 18)
                 P5R.Slab(g, tick,
                     r.Love ? Color.FromArgb(r.LoveMust ? 235 : 170, 226, 84, 132)
                            : r.Story ? Color.FromArgb(190, 226, 176, 64)
                                      : r.Daily ? Color.FromArgb(150, 110, 138, 168)
-                                               : r.Growth ? Color.FromArgb(200, 72, 186, 168)
-                                                          : (on ? T.Accent : Color.FromArgb(80, P5R.Wire)));
+                                               : r.Info ? Color.FromArgb(170, InfoColor(r.Badge))
+                                                        : r.Place ? Color.FromArgb(210, 226, 176, 64)
+                                                                  : r.Indent ? (r.Best ? Color.FromArgb(230, T.Accent)
+                                                                                       : Color.FromArgb(150, 118, 146, 178))
+                                                                             : r.Growth ? Color.FromArgb(200, 72, 186, 168)
+                                                                                        : (on ? T.Accent : Color.FromArgb(80, P5R.Wire)));
 
             // 等级徽章
-            var badge = new RectangleF(x + 10, y + 4 * S, BadgeW, BadgeH);
-            string bt = _statMode ? ("Lv" + r.Lv)
+            var badge = new RectangleF(x + 10 + ox, y + 4 * S, BadgeW, BadgeH);
+            string bt = !string.IsNullOrEmpty(r.Badge) ? r.Badge
+                      : _statMode ? ("Lv" + r.Lv)
                       : (_tab == 1 ? "+50"
                       : (r.Daily ? "活动" : (r.Story ? "剧情" : "R" + r.Lv)));
 
@@ -583,7 +735,10 @@ namespace P5ROverlay
             else
             {
                 Color badgeFill, badgeText;
-                if (r.Daily) { badgeFill = Color.FromArgb(215, 118, 146, 178); badgeText = P5R.Paper; }
+                if (r.Info) { badgeFill = Color.FromArgb(225, InfoColor(r.Badge)); badgeText = P5R.Paper; }
+                else if (r.Place) { badgeFill = Color.FromArgb(235, 226, 176, 64); badgeText = P5R.Ink; }
+                else if (r.Indent) { badgeFill = r.Best ? T.Accent : Color.FromArgb(205, 118, 146, 178); badgeText = P5R.Paper; }
+                else if (r.Daily) { badgeFill = Color.FromArgb(215, 118, 146, 178); badgeText = P5R.Paper; }
                 else if (r.Growth) { badgeFill = Color.FromArgb(226, 72, 186, 168); badgeText = P5R.Ink; }
                 else if (r.Story) { badgeFill = Color.FromArgb(226, 176, 64); badgeText = P5R.Ink; }
                 else if (on) { badgeFill = T.Accent; badgeText = P5R.Paper; }
@@ -596,7 +751,7 @@ namespace P5ROverlay
                         TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
             }
 
-            float tx = x + TextX;
+            float tx = x + TextX + ox;
             float tw = Math.Max(40f, x + w - tx - 4);
             float nameTop = y + 3f * S;
 
@@ -604,11 +759,15 @@ namespace P5ROverlay
             Color nameColor = on ? T.Text : Theme.Blend(T.Text, T.Bg, 0.66);
             if (r.Story) nameColor = Theme.Blend(T.Text, P5R.Ink, 0.35);
             if (r.Love) nameColor = Color.FromArgb(r.LoveMust ? 214 : 198, 62, 108);
+            if (r.Place) nameColor = Theme.Blend(Color.FromArgb(226, 176, 64), T.Text, 0.18f);
+            if (r.Indent && r.Best) nameColor = Theme.Blend(T.Accent, T.Text, 0.22f);
+            if (r.Info) nameColor = T.Text;
             if (r.Growth) nameColor = on ? Theme.Blend(Color.FromArgb(56, 176, 158), T.Text, 0.28f)
                                          : Theme.Blend(Theme.Blend(Color.FromArgb(56, 176, 158), T.Text, 0.28f), T.Bg, 0.55f);
             if (r.Daily) nameColor = Theme.Blend(Color.FromArgb(98, 128, 162), T.Text, 0.28f);
 
-            using (var f = P5R.F(NamePx, FontStyle.Bold))
+            // 作息页的正文是整段说明文字，加粗反而糊，用常规字重
+            using (var f = P5R.F(r.Info ? NamePx * 0.96f : NamePx, r.Info ? FontStyle.Regular : FontStyle.Bold))
                 TextRenderer.DrawText(g, r.Name, f,
                     new Rectangle((int)tx, (int)nameTop, (int)tw, (int)(r.NameH > 0 ? r.NameH : NameH)), nameColor,
                     TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak |
@@ -629,6 +788,19 @@ namespace P5ROverlay
                 };
                 using var br = new SolidBrush(dc);
                 g.DrawString(r.Desc, f, br, box, sf);
+            }
+        }
+
+        /// <summary>作息页左侧短标签的配色：开启 / 面具偏金，地点 / 时间用主色，天气 / UP / 备注偏蓝灰。</summary>
+        private static Color InfoColor(string label)
+        {
+            switch (label)
+            {
+                case "开启":
+                case "面具": return Color.FromArgb(196, 152, 52);
+                case "地点":
+                case "时间": return Color.FromArgb(196, 48, 44);
+                default: return Color.FromArgb(96, 122, 152);
             }
         }
 

@@ -86,6 +86,12 @@ namespace P5ROverlay
                 return;
             }
 
+            if (args.Any(a => a.Equals("--navhold", StringComparison.OrdinalIgnoreCase)))
+            {
+                RunNavHold(AppContext.BaseDirectory);
+                return;
+            }
+
             if (args.Any(a => a.Equals("--grab", StringComparison.OrdinalIgnoreCase)))
             {
                 RunGrab(AppContext.BaseDirectory);
@@ -283,8 +289,66 @@ namespace P5ROverlay
                 Pump(200);
                 f.ShotTo(Path.Combine(outDir, $"C{it.cid}_{it.name}_底.png"));
             }
+
+            // 新增的「作息 / 景点」两页：挑有代表性的（有景点无信息、有信息无景点、都空）
+            var extra = new (int cid, string name, int tab)[]
+            {
+                (14, "武见妙", 1), (14, "武见妙", 2), (14, "武见妙", 3),
+                (8,  "坂本龙司", 2),
+                (10, "佐仓双叶", 3),
+                (7,  "高卷杏", 3),
+                (21, "新岛冴", 2),
+            };
+            foreach (var it in extra)
+            {
+                f.DebugCoopDetail(it.cid, 10, it.tab);
+                Pump(300);
+                f.ShotTo(Path.Combine(outDir, $"T{it.tab}_{it.name}.png"));
+            }
+
+            // 最窄窗口：两列页签 + 标题 + 副标题最容易挤，单独留一张
+            f.Size = new System.Drawing.Size(432, 560);
+            Pump(300);
+            f.DebugCoopDetail(14, 10, 3);
+            Pump(300);
+            f.ShotTo(Path.Combine(outDir, "T3_最小宽度.png"));
+            f.DebugCoopDetail(14, 10, 2);
+            Pump(300);
+            f.ShotTo(Path.Combine(outDir, "T2_最小宽度.png"));
             f.DebugDemoData();
             Pump(200);
+            f.Close();
+        }
+
+        /// <summary>
+        /// 长按自检：合成小键盘 8 的按下 / 抬起，分别按住 150ms 与 800ms，
+        /// 看导航被触发几次（短按 1 次；长按从 350ms 后每 70ms 一次）。
+        /// </summary>
+        private static void RunNavHold(string dir)
+        {
+            var f = new OverlayForm();
+            f.Location = new System.Drawing.Point(40, 40);
+            f.Show();
+            Pump(1500);
+            if (!f.HasData) { f.DebugDemoData(); Pump(300); }
+            f.DebugStopWorker();
+            f.DebugSetup(1, true);      // 停在好感页，弹层不用开
+
+            var sb = new System.Text.StringBuilder();
+            const byte VK_NUMPAD8 = 0x68;
+            foreach (int hold in new[] { 150, 800 })
+            {
+                Pump(300);
+                OverlayForm.NavFires = 0; OverlayForm.NavTimerFires = 0; OverlayForm.NavHotkeyFires = 0;
+                Win32.keybd_event(VK_NUMPAD8, 0, 0, IntPtr.Zero);
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                while (sw.ElapsedMilliseconds < hold) Pump(10);      // Pump 自带 30ms 间隔，按真实时间算
+                Win32.keybd_event(VK_NUMPAD8, 0, Win32.KEYEVENTF_KEYUP, IntPtr.Zero);
+                Pump(250);
+                sb.AppendLine($"按住 {hold,3}ms → 导航 {OverlayForm.NavFires} 次" +
+                              $"（热键 {OverlayForm.NavHotkeyFires} / 定时器 {OverlayForm.NavTimerFires}）");
+            }
+            try { File.WriteAllText(Path.Combine(dir, "navhold.txt"), sb.ToString()); } catch { }
             f.Close();
         }
 

@@ -98,6 +98,13 @@ namespace P5ROverlay
 
         private bool _navRegistered;
 
+        // ---- 方向键长按连发：热键用 MOD_NOREPEAT，系统只报一次按下，
+        //      所以按下后自己开表，按「先等 350ms、之后每 70ms 一步」轮询按键是否还按着。
+        private const int NavRepeatDelay = 350, NavRepeatStep = 70;
+        private readonly System.Windows.Forms.Timer _navRepeat = new System.Windows.Forms.Timer { Interval = 40 };
+        private int _navRepeatId, _navRepeatVk, _navRepeatT0, _navRepeatNext;
+        private bool _navRepeating;
+
         private sealed class HotkeySlot
         {
             public int Id;
@@ -155,6 +162,7 @@ namespace P5ROverlay
             StartWorker();
             StartTopMostKeeper();
             StartDateTicker();
+            _navRepeat.Tick += NavRepeatTick;
         }
 
         private const int WS_EX_COMPOSITED = 0x02000000;
@@ -1314,6 +1322,8 @@ namespace P5ROverlay
         {
             if (!IsHandleCreated || IsDisposed) return;
 
+            StopNavRepeat();       // 键都换了 / 要收起了，连发必须停
+
             bool want = NavWanted();
             if (want == _navRegistered) return;
 
@@ -1351,6 +1361,7 @@ namespace P5ROverlay
         /// <summary>小键盘导航分发：8/5 上下、4/6 左右、7 确认、9 关闭。</summary>
         private void DispatchNav(int id)
         {
+            NavFires++;
             var page = CurrentPage();
             if (page == null) return;      // 日志 / 设置页没有可导航的东西
 
@@ -1364,6 +1375,42 @@ namespace P5ROverlay
                 case HK_NAV_BACK: page.NavBack(); break;
             }
             page.Invalidate();
+        }
+
+        // ------------------------------------------------------------ 方向键长按
+        private static bool IsNavDir(int id)
+            => id == HK_NAV_UP || id == HK_NAV_DOWN || id == HK_NAV_LEFT || id == HK_NAV_RIGHT;
+
+        /// <summary>方向键按下：先立刻走一步（短按就是这一下），之后按住不放再连发。</summary>
+        private void BeginNavRepeat(HotkeySlot s)
+        {
+            _navRepeatId = s.Id;
+            _navRepeatVk = (int)s.Vk;
+            _navRepeatT0 = Environment.TickCount;
+            _navRepeatNext = _navRepeatT0 + NavRepeatDelay;
+            _navRepeating = true;
+            if (!_navRepeat.Enabled) _navRepeat.Start();
+        }
+
+        private void StopNavRepeat()
+        {
+            _navRepeating = false;
+            if (_navRepeat.Enabled) _navRepeat.Stop();
+        }
+
+        private void NavRepeatTick(object sender, EventArgs e)
+        {
+            if (!_navRepeating) { _navRepeat.Stop(); return; }
+            if (!NavWanted()) { StopNavRepeat(); return; }
+            if ((Win32.GetAsyncKeyState(_navRepeatVk) & 0x8000) == 0) { StopNavRepeat(); return; }
+
+            int now = Environment.TickCount;
+            if (now - _navRepeatT0 < NavRepeatDelay) return;   // 没按住满 350ms：就当短按，不连发
+            if (now < _navRepeatNext) return;
+
+            _navRepeatNext = now + NavRepeatStep;
+            NavTimerFires++;
+            DispatchNav(_navRepeatId);
         }
 
         private void RegisterAllHotkeys()
@@ -1419,6 +1466,7 @@ namespace P5ROverlay
         {
             if (_captureSlot == s) { EndHotkeyCapture(null); return; }
             _captureSlot = s;
+            StopNavRepeat();
             // 捕获期间摘掉全局热键，否则按 F9 会被自己抢走
             foreach (var o in _slots) try { Win32.UnregisterHotKey(Handle, o.Id); } catch { }
             SyncNavHotkeys();     // 导航键也一起摘掉，否则按小键盘会被导航吃掉
@@ -1479,8 +1527,16 @@ namespace P5ROverlay
 
                 if (_slotById.TryGetValue(id, out var slot))
                 {
+                    // 同一个方向键的连发已经在跑：这次是系统自己的按键重复，节奏交给我们自己的表，
+                    // 免得「系统重复 + 定时器」两路一起推，一次长按走出两倍步数
+                    if (slot.Nav && IsNavDir(id)) NavHotkeyFires++;
+                    bool sameRepeat = slot.Nav && IsNavDir(id) && _navRepeating && _navRepeatId == id;
+                    if (sameRepeat) return;
+
                     try { slot.OnFire?.Invoke(); }
                     catch (Exception ex) { Log.W($"[hk] {slot.Caption} 执行异常: {ex.Message}"); }
+                    // 方向键：这一下已经生效，按住不放就接着连发
+                    if (slot.Nav && IsNavDir(id)) BeginNavRepeat(slot);
                     return;
                 }
                 return;
@@ -1803,6 +1859,7 @@ namespace P5ROverlay
         {
             _reallyExit = true;
             _stop = true;
+            try { StopNavRepeat(); _navRepeat.Dispose(); } catch { }
             try { if (_dateTick != null) { _dateTick.Stop(); _dateTick.Dispose(); _dateTick = null; } } catch { }
             try { SaveSettings(); } catch { }
             try { if (_tray != null) { _tray.Visible = false; _tray.Dispose(); } } catch { }
@@ -2189,6 +2246,9 @@ namespace P5ROverlay
 
         /// <summary>自检：当前是否已经读到真实数据。</summary>
         public bool HasData => _snap != null && _snap.Stats != null && _snap.Stats.Any(v => v > 0);
+
+        /// <summary>自检计数：导航分发被调用了几次（含长按连发），给 --navhold 用。</summary>
+        public static int NavFires, NavTimerFires, NavHotkeyFires;
 
         /// <summary>自检：模拟一次小键盘导航。0 上 / 1 下 / 2 左 / 3 右 / 4 确认 / 5 返回。</summary>
         public void DebugNav(int key)

@@ -110,6 +110,17 @@ namespace P5ROverlay
         [DllImport("user32.dll")]
         public static extern IntPtr WindowFromPoint(POINT p);
 
+        /// <summary>按键当前是否按着（最高位 0x8000 = 按下）。热键用 MOD_NOREPEAT 时系统只报一次按下，
+        /// 长按连发要靠它自己轮询。</summary>
+        [DllImport("user32.dll")]
+        public static extern short GetAsyncKeyState(int vKey);
+
+        public const uint KEYEVENTF_KEYUP = 0x0002;
+
+        /// <summary>合成一次按键（自检长按连发用；合成事件同样会触发全局热键）。</summary>
+        [DllImport("user32.dll")]
+        public static extern void keybd_event(byte vk, byte scan, uint flags, IntPtr extra);
+
         [StructLayout(LayoutKind.Sequential)]
         public struct RECT { public int Left, Top, Right, Bottom; }
 
