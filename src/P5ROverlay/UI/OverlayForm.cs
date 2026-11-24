@@ -2372,6 +2372,14 @@ namespace P5ROverlay
             Application.DoEvents();
         }
 
+        /// <summary>自检：能力表弹层滚动指定像素。</summary>
+        public void DebugCoopScroll(int dy)
+        {
+            _coopPage.DebugScrollDetail(dy);
+            Invalidate(true);
+            Application.DoEvents();
+        }
+
         /// <summary>自检：停掉数据线程和日历心跳，避免它们把手喂进来的日期冲掉。</summary>
         public void DebugStopWorker()
         {

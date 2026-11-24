@@ -910,6 +910,13 @@ namespace P5ROverlay
             Invalidate(); Update();
         }
 
+        /// <summary>自检：把能力表弹层滚到底，方便截到 Max 那一行。</summary>
+        public void DebugScrollDetail(int dy)
+        {
+            Detail.ScrollBy(dy);
+            Invalidate(); Update();
+        }
+
         // ------------------------------------------------------------ 小键盘导航
         private int RowTopOf(int index)
         {

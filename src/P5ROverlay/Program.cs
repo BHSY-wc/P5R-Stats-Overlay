@@ -79,6 +79,13 @@ namespace P5ROverlay
                 return;
             }
 
+            // 能力表自检：逐个 Coop 打开详情，核对 Rank 条目是否齐全
+            if (args.Any(a => a.Equals("--coopshot", StringComparison.OrdinalIgnoreCase)))
+            {
+                RunCoopShot(AppContext.BaseDirectory);
+                return;
+            }
+
             if (args.Any(a => a.Equals("--grab", StringComparison.OrdinalIgnoreCase)))
             {
                 RunGrab(AppContext.BaseDirectory);
@@ -237,6 +244,46 @@ namespace P5ROverlay
         }
 
         /// <summary>自检截图：把四个页面各拍一张，存到 exe 同目录 shots\。</summary>
+        /// <summary>
+        /// 能力表自检：按 Coop ID 逐个打开行会详情的「能力」页，截图核对每个 Rank 的条目。
+        /// </summary>
+        private static void RunCoopShot(string dir)
+        {
+            string outDir = Path.Combine(dir, "shots_coop");
+            try { Directory.CreateDirectory(outDir); } catch { }
+
+            var f = new OverlayForm();
+            f.Location = new System.Drawing.Point(40, 40);
+            f.Show();
+            Pump(1500);
+            f.DebugStopWorker();
+
+            var list = new (int cid, string name, int rank)[]
+            {
+                (1,  "伊戈尔",   10),
+                (9,  "明智吾郎", 10),
+                (10, "佐仓双叶", 10),
+                (14, "武见妙",   10),
+                (21, "新岛冴",   10),
+                (33, "芳泽霞",   10),
+                (35, "丸喜拓人", 10),
+            };
+            foreach (var it in list)
+            {
+                f.DebugCoopDetail(it.cid, it.rank, 0);
+                Pump(300);
+                f.ShotTo(Path.Combine(outDir, $"C{it.cid}_{it.name}.png"));
+
+                // 再滚到底，Max / 最后一级的条目才能进画面
+                f.DebugCoopScroll(3000);
+                Pump(200);
+                f.ShotTo(Path.Combine(outDir, $"C{it.cid}_{it.name}_底.png"));
+            }
+            f.DebugDemoData();
+            Pump(200);
+            f.Close();
+        }
+
         /// <summary>
         /// 小键盘导航自检：不模拟真实按键，直接调 Nav 接口，逐页截「光标 / 弹层 / 浮层」。
         /// 键位：0 上 / 1 下 / 2 左 / 3 右 / 4 确认 / 5 返回。

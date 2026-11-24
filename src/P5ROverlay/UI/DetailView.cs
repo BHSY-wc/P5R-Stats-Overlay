@@ -192,7 +192,9 @@ namespace P5ROverlay
             {
                 int c = merged[i].Lv.CompareTo(merged[j].Lv);
                 if (c != 0) return c;
-                return merged[i].Love.CompareTo(merged[j].Love);
+                c = merged[i].Love.CompareTo(merged[j].Love);
+                if (c != 0) return c;
+                return i.CompareTo(j);   // 同一 Rank 有多条能力时保持数据表里的先后
             });
             foreach (var i in order) _rows.Add(merged[i]);
 
