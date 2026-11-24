@@ -104,6 +104,8 @@ namespace P5ROverlay
             public bool Story;   // 剧情触发（二觉 / 三觉），不看好感
             public bool Love;    // 恋爱线的关键选项
             public bool LoveMust;// 恋人确认项（选错就断在友人线）
+            public bool Growth;  // 升级事件后拿到的五维点数
+            public bool Daily;   // 特定日期 / 日常活动的五维，排在表尾
             public float NameH;  // 布局时算出的单行/多行名称高度
             public float DescH;  // 布局时算出的描述高度
         }
@@ -185,14 +187,40 @@ namespace P5ROverlay
                 });
             }
 
-            // 稳定排序：同 Rank 时能力在前、恋爱提示在后
+            // 升级事件后拿到的五维：紧跟在该级能力下面（Rank 记的是「升到的那一级」）
+            foreach (var s in GuideData.StatUps(_coopId))
+            {
+                merged.Add(new Row
+                {
+                    Lv = s.Rank,
+                    Name = "♪ " + s.Text,
+                    Desc = "",
+                    On = s.Rank <= _cur,
+                    Growth = true,
+                });
+            }
+
+            // 不靠升级的（特定日期 / 日常活动）统一排在最后
+            foreach (var s in GuideData.Daily(_coopId))
+            {
+                merged.Add(new Row
+                {
+                    Lv = 90,
+                    Name = s,
+                    Desc = "",
+                    On = true,
+                    Daily = true,
+                });
+            }
+
+            // 稳定排序：同 Rank 时 能力 → 五维 → 恋爱提示
             var order = new List<int>();
             for (int i = 0; i < merged.Count; i++) order.Add(i);
             order.Sort((i, j) =>
             {
                 int c = merged[i].Lv.CompareTo(merged[j].Lv);
                 if (c != 0) return c;
-                c = merged[i].Love.CompareTo(merged[j].Love);
+                c = Kind(merged[i]).CompareTo(Kind(merged[j]));
                 if (c != 0) return c;
                 return i.CompareTo(j);   // 同一 Rank 有多条能力时保持数据表里的先后
             });
@@ -205,6 +233,9 @@ namespace P5ROverlay
             else
                 _empty = "";
         }
+
+        /// <summary>同一 Rank 内的排列顺序：能力 → 五维成长 → 恋爱提示（日常活动恒在表尾）。</summary>
+        private static int Kind(Row r) => r.Daily ? 3 : r.Love ? 2 : r.Growth ? 1 : 0;
 
         /// <summary>礼物页：只列「好感 +50」那一档（普通 5 / 较好 10 / 高级 50）。</summary>
         private void BuildGiftRows()
@@ -425,17 +456,18 @@ namespace P5ROverlay
                 P5R.Text(g, _title, titleFont, new RectangleF(head.X + 20, head.Y + 3, titleMaxW, 44),
                     P5R.Paper, StringAlignment.Near, StringAlignment.Center, -0.16f, true);
 
-            // 副标题（阿卡纳 · Rank）：标题挤满时不画，免得跟页签压字
+            // 副标题（阿卡纳 · Rank）：靠右贴页签放，与标题之间留够间距，挤不下就不画
             if (_sub.Length > 0)
             {
                 using var f2 = P5R.F(10.5f + (S - 1f) * 4f, FontStyle.Bold);
-                float x = head.X + 24 + titleW + 10f;
-                float room = _panel.Right - 46f - tabSpace - x;
                 float sw = TextRenderer.MeasureText(g, _sub, f2, new Size(1000, 100),
                     TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width;
-                if (room > Math.Min(sw, 64f))
+                float sx = _panel.Right - 46f - tabSpace - sw - 4f;   // 右对齐到 ✕ 左侧
+                // P5R.Text 带斜切，实际占位比 MeasureString 宽一点，多留 8%
+                float titleRight = head.X + 24 + titleW * 1.08f;
+                if (sx > titleRight + 10f)
                     TextRenderer.DrawText(g, _sub, f2,
-                        new Rectangle((int)x, _panel.Y + 16, (int)Math.Min(room, sw + 4f), 20), Color.FromArgb(236, 232, 228),
+                        new Rectangle((int)sx, _panel.Y + 16, (int)(sw + 4f), 20), Color.FromArgb(236, 232, 228),
                         TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding |
                         TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
             }
@@ -526,12 +558,15 @@ namespace P5ROverlay
                 P5R.Slab(g, tick,
                     r.Love ? Color.FromArgb(r.LoveMust ? 235 : 170, 226, 84, 132)
                            : r.Story ? Color.FromArgb(190, 226, 176, 64)
-                                     : (on ? T.Accent : Color.FromArgb(80, P5R.Wire)));
+                                     : r.Daily ? Color.FromArgb(150, 110, 138, 168)
+                                               : r.Growth ? Color.FromArgb(200, 72, 186, 168)
+                                                          : (on ? T.Accent : Color.FromArgb(80, P5R.Wire)));
 
             // 等级徽章
             var badge = new RectangleF(x + 10, y + 4 * S, BadgeW, BadgeH);
             string bt = _statMode ? ("Lv" + r.Lv)
-                      : (_tab == 1 ? "+50" : (r.Story ? "剧情" : "R" + r.Lv));
+                      : (_tab == 1 ? "+50"
+                      : (r.Daily ? "活动" : (r.Story ? "剧情" : "R" + r.Lv)));
 
             if (r.Love)
             {
@@ -548,7 +583,9 @@ namespace P5ROverlay
             else
             {
                 Color badgeFill, badgeText;
-                if (r.Story) { badgeFill = Color.FromArgb(226, 176, 64); badgeText = P5R.Ink; }
+                if (r.Daily) { badgeFill = Color.FromArgb(215, 118, 146, 178); badgeText = P5R.Paper; }
+                else if (r.Growth) { badgeFill = Color.FromArgb(226, 72, 186, 168); badgeText = P5R.Ink; }
+                else if (r.Story) { badgeFill = Color.FromArgb(226, 176, 64); badgeText = P5R.Ink; }
                 else if (on) { badgeFill = T.Accent; badgeText = P5R.Paper; }
                 else { badgeFill = Color.FromArgb(150, P5R.SlabLo); badgeText = Color.FromArgb(150, P5R.Ash); }
 
@@ -567,6 +604,9 @@ namespace P5ROverlay
             Color nameColor = on ? T.Text : Theme.Blend(T.Text, T.Bg, 0.66);
             if (r.Story) nameColor = Theme.Blend(T.Text, P5R.Ink, 0.35);
             if (r.Love) nameColor = Color.FromArgb(r.LoveMust ? 214 : 198, 62, 108);
+            if (r.Growth) nameColor = on ? Theme.Blend(Color.FromArgb(56, 176, 158), T.Text, 0.28f)
+                                         : Theme.Blend(Theme.Blend(Color.FromArgb(56, 176, 158), T.Text, 0.28f), T.Bg, 0.55f);
+            if (r.Daily) nameColor = Theme.Blend(Color.FromArgb(98, 128, 162), T.Text, 0.28f);
 
             using (var f = P5R.F(NamePx, FontStyle.Bold))
                 TextRenderer.DrawText(g, r.Name, f,

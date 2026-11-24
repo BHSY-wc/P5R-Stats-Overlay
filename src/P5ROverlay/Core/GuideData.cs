@@ -25,6 +25,128 @@ namespace P5ROverlay
         public static Ability[] Coop(int cid)
             => _coop.TryGetValue(cid, out var v) ? v : System.Array.Empty<Ability>();
 
+        /// <summary>
+        /// 升级事件结束后获得的五维点数。Rank = 升到的那一级（1→2 记 2），
+        /// 面板里挂在该级解锁的能力下方。来源：wiki「提升事件 → COOP事件后」行。
+        /// </summary>
+        public struct StatUp
+        {
+            public int Rank;
+            public string Text;
+            public StatUp(int r, string t) { Rank = r; Text = t; }
+        }
+
+        private static readonly Dictionary<int, StatUp[]> _statUp = BuildStatUps();
+        private static readonly Dictionary<int, string[]> _daily = BuildDaily();
+
+        /// <summary>升级时给的五维；没有就返回空数组。</summary>
+        public static StatUp[] StatUps(int cid)
+            => _statUp.TryGetValue(cid, out var v) ? v : System.Array.Empty<StatUp>();
+
+        /// <summary>不靠升级、而是特定日期 / 日常活动拿到的五维，显示在能力表最下方。</summary>
+        public static string[] Daily(int cid)
+            => _daily.TryGetValue(cid, out var v) ? v : System.Array.Empty<string>();
+
+        private static StatUp U(int r, string t) => new StatUp(r, t);
+
+        private static Dictionary<int, StatUp[]> BuildStatUps()
+        {
+            var d = new Dictionary<int, StatUp[]>();
+
+            // 6 佐仓惣治郎：体贴 +3 / +5
+            d[6] = new[]
+            {
+                U(2, "体贴 +3"), U(4, "体贴 +3"), U(5, "体贴 +3"),
+                U(6, "体贴 +5"), U(7, "体贴 +5"),
+            };
+
+            // 13 岩井宗久：灵巧 +3 / +5
+            d[13] = new[]
+            {
+                U(2, "灵巧 +3"), U(3, "灵巧 +3"), U(4, "灵巧 +3"), U(5, "灵巧 +3"),
+                U(8, "灵巧 +5"),
+            };
+
+            // 14 武见妙：每级 +2 勇气（7→8 拆成两段，最终仍 +2）
+            d[14] = new[]
+            {
+                U(2, "勇气 +2"), U(3, "勇气 +2"), U(4, "勇气 +2"), U(5, "勇气 +2"),
+                U(6, "勇气 +2"), U(7, "勇气 +2"), U(8, "勇气 +2"),
+            };
+
+            // 15 川上贞代：无（升级不加五维）
+
+            // 16 大宅一子：魅力 +2 / +3 / +5
+            d[16] = new[]
+            {
+                U(2, "魅力 +2"), U(3, "魅力 +3"), U(4, "魅力 +3"),
+                U(7, "魅力 +3"), U(8, "魅力 +5"),
+            };
+
+            // 17 织田信也：体贴 +5 / +3
+            d[17] = new[]
+            {
+                U(2, "体贴 +5"), U(3, "体贴 +3"), U(4, "体贴 +3"), U(5, "体贴 +3"),
+                U(6, "体贴 +3"), U(8, "体贴 +5"), U(9, "体贴 +5"),
+            };
+
+            // 18 东乡一二三：每级 +2 知识（0→1 也有）
+            d[18] = new[]
+            {
+                U(1, "知识 +2"), U(2, "知识 +2"), U(3, "知识 +2"), U(5, "知识 +2"),
+                U(6, "知识 +2"), U(7, "知识 +2"), U(8, "知识 +2"),
+            };
+
+            // 20 吉田寅之助：魅力 +3 / +5
+            d[20] = new[]
+            {
+                U(2, "魅力 +3"), U(4, "魅力 +3"), U(5, "魅力 +3"),
+                U(7, "魅力 +3"), U(8, "魅力 +5"),
+            };
+
+            return d;
+        }
+
+        private static Dictionary<int, string[]> BuildDaily()
+        {
+            var d = new Dictionary<int, string[]>();
+
+            // 3 新岛真：考试相关邀约
+            d[3] = new[] { "考试相关（7.12 / 10.14）　知识 +5" };
+
+            // 4 奥村春：11.13 夜邀请，选「意外的喜欢」
+            d[4] = new[] { "11.13 夜晚 邀请「意外的喜欢」　勇气 +5" };
+
+            // 5 喜多川祐介：在家里读书 / 看 DVD、电影、考试
+            d[5] = new[]
+            {
+                "读书（7.27 / 8.1 / 8.4 白）　魅力 +5",
+                "鉴赏 DVD（8.8 / 8.11 白）　魅力 +5",
+                "自己房间「洗澡」　魅力 +5",
+                "电影邀请（8.5 夜）　体贴 +5",
+                "考试相关（10.15 夜）　知识 +5",
+            };
+
+            // 8 坂本龙司：考试、电影、泡咖啡、看 DVD
+            d[8] = new[]
+            {
+                "考试相关（5.10 / 7.12 / 10.16）　知识 +5",
+                "电影鉴赏（5.29 夜）　体贴 +5",
+                "自己房间「咖啡」　魅力 +5",
+                "鉴赏 DVD（8.3 白）　魅力 +5",
+            };
+
+            // 10 佐仓双叶：打游戏、看电影、读杂志
+            d[10] = new[]
+            {
+                "在自己房间打游戏（9.25 白）　勇气 +5",
+                "电影鉴赏（10.2 夜）　知识 +5",
+                "阅读杂志（10.10）　灵巧 +5",
+            };
+
+            return d;
+        }
+
         private static Dictionary<int, Ability[]> Build()
         {
             var d = new Dictionary<int, Ability[]>();
