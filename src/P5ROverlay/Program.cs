@@ -541,6 +541,21 @@ namespace P5ROverlay
                 f.ShotTo(Path.Combine(outDir, name + ".png"));
             }
 
+            // 好感页滚到底：已满级的金块 + 塔罗名 + 「已满级」状态都要经得起看
+            f.DebugSetup(1, true);
+            f.DebugCoopPageScroll(9999);
+            Pump(500);
+            f.ShotTo(Path.Combine(outDir, "2k_好感_已满级.png"));
+
+            // 最窄窗口下的同一条：塔罗名 + MAX + 已满级 三样挤在一行，最容易裁字
+            f.Size = new System.Drawing.Size(432, 660);
+            Pump(400);
+            f.DebugCoopPageScroll(9999);
+            Pump(300);
+            f.ShotTo(Path.Combine(outDir, "2l_好感_已满级_最小宽度.png"));
+            f.Size = new System.Drawing.Size(600, 660);
+            Pump(300);
+
             // 日志超出一屏：自绘滚动条应出现在右侧，并且已经滚到底
             f.DebugSetup(4, true);
             f.DebugFillLog(60);

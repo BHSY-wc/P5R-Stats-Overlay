@@ -2058,7 +2058,7 @@ namespace P5ROverlay
             AddGroup("可以升级", Color.FromArgb(110, 220, 140), ready);
             AddGroup("继续积累", Color.FromArgb(240, 196, 96), accum);
             AddGroup("不看点数（任务 / 剧情 / 人格指数）", Color.FromArgb(150, 158, 170), special);
-            AddGroup("已满级", Color.FromArgb(196, 130, 240), maxed);
+            AddGroup("已满级", Color.FromArgb(234, 190, 76), maxed);
             return rows;
         }
 
@@ -2328,6 +2328,14 @@ namespace P5ROverlay
         {
             _statPage.DebugClearGrow();
             _coopPage.DebugClearGrow();
+            Invalidate(true);
+            Application.DoEvents();
+        }
+
+        /// <summary>自检：好感页滚到指定偏移（拍「已满级」金块）。</summary>
+        public void DebugCoopPageScroll(int y)
+        {
+            _coopPage.DebugScrollTo(y);
             Invalidate(true);
             Application.DoEvents();
         }

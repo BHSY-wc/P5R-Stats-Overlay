@@ -23,6 +23,13 @@ namespace P5ROverlay
         public static readonly Color Ash    = Color.FromArgb(134, 136, 146);
         public static readonly Color Wire   = Color.FromArgb(56, 56, 64);
 
+        // 金色：满级 / 达成态。取游戏里「奖杯、Rank 达成、天鹅绒房间」那种偏黄的旧金，
+        // 不是纯黄，低一点饱和度才不会在纯黑底上刺眼。
+        public static readonly Color Gold    = Color.FromArgb(226, 176, 64);
+        public static readonly Color GoldHot = Color.FromArgb(255, 214, 104);
+        /// <summary>金色底板上的文字/图标，比 Ink 柔一点，但仍是深色，保证对比度。</summary>
+        public static readonly Color GoldInk = Color.FromArgb(34, 24, 8);
+
         /// <summary>所有方块的横向倾角（像素）。负值 = 顶边右移，即 P5R 的「右倒」。</summary>
         public const float Lean = -13f;
 
