@@ -11,6 +11,8 @@ selftest.txt
 uitest.txt
 readtest.txt
 shots/
+shots_coop/
+shots_nav/
 _mem_addr.json
 
 # Python
